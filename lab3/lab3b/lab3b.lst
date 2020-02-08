@@ -1,0 +1,485 @@
+   1               		.file	"lab3b.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  11               	transmitByte:
+  12               	.LFB10:
+  13               		.file 1 "lab3b.c"
+   1:lab3b.c       **** #include <avr/io.h>
+   2:lab3b.c       **** #include <util/delay.h>
+   3:lab3b.c       **** #include <avr/cpufunc.h>
+   4:lab3b.c       **** #include <stdio.h>
+   5:lab3b.c       **** 
+   6:lab3b.c       **** /*
+   7:lab3b.c       **** 
+   8:lab3b.c       **** Assignment:
+   9:lab3b.c       **** 
+  10:lab3b.c       **** i. Connect 2 of the 4 momentary switches (S1-S4) on the IO Trainer Board to 2 pins on the Rome
+  11:lab3b.c       **** Board
+  12:lab3b.c       **** 
+  13:lab3b.c       **** ii. Write a C program that replicate the functions of Lab 2B but use the serial terminal as a displ
+  14:lab3b.c       **** Like Lab 2B, the program will read two momentary switches and used them to increase or
+  15:lab3b.c       **** decrease a count by 1. The count can go from -9999 to 9999. The decimal representation of the
+  16:lab3b.c       **** count will be output on the serial command. The program will only display a new number when
+  17:lab3b.c       **** there is an increment or decrement in the count.
+  18:lab3b.c       **** 
+  19:lab3b.c       **** The program must have a function defined as:
+  20:lab3b.c       **** void printDec(int num)
+  21:lab3b.c       **** The function takes in one integer as a parameter. The function would output the ASCII
+  22:lab3b.c       **** representation of the number through the UART. Both negative and positive number has to be
+  23:lab3b.c       **** presented properly.
+  24:lab3b.c       **** 
+  25:lab3b.c       **** iii. Create a connection chart in the comments above the program like in Lab 2B.
+  26:lab3b.c       **** 
+  27:lab3b.c       **** 
+  28:lab3b.c       **** Connection Diagram:
+  29:lab3b.c       **** 
+  30:lab3b.c       **** Atmega328p | Romeo board | IO Board | Jumper Component
+  31:lab3b.c       **** 
+  32:lab3b.c       **** 	PD2    |     D2     |  JP2_5   | 	S1  
+  33:lab3b.c       **** 	PD3    |     D3     |  JP2_6   | 	S2
+  34:lab3b.c       **** 	
+  35:lab3b.c       **** */
+  36:lab3b.c       **** 
+  37:lab3b.c       **** /*********************************************
+  38:lab3b.c       **** 	Macros & Enums
+  39:lab3b.c       **** **********************************************/
+  40:lab3b.c       **** 
+  41:lab3b.c       **** #define F_CPU 16000000UL
+  42:lab3b.c       **** #define BAUD 9600
+  43:lab3b.c       **** 
+  44:lab3b.c       **** enum{
+  45:lab3b.c       **** 	NONE=0,
+  46:lab3b.c       **** 	ADD=1,
+  47:lab3b.c       **** 	SUBTRACT=2
+  48:lab3b.c       **** };
+  49:lab3b.c       **** 
+  50:lab3b.c       **** /*********************************************
+  51:lab3b.c       **** 	Local Function Declaration
+  52:lab3b.c       **** **********************************************/
+  53:lab3b.c       **** 
+  54:lab3b.c       **** static void initUART(uint32_t baud);
+  55:lab3b.c       **** static void transmitByte(uint8_t data);
+  56:lab3b.c       **** static void printCR(void);
+  57:lab3b.c       **** static void printDec(int num);
+  58:lab3b.c       **** static void shiftChars(char chars[], int startPs);
+  59:lab3b.c       **** static void transmitString(char* stringPtr);
+  60:lab3b.c       **** static int updateCounter(int counter, int change);
+  61:lab3b.c       **** 
+  62:lab3b.c       **** /*********************************************
+  63:lab3b.c       **** 	Main Function
+  64:lab3b.c       **** **********************************************/
+  65:lab3b.c       **** 
+  66:lab3b.c       **** int main(int argc, char const *argv[]){
+  67:lab3b.c       **** 
+  68:lab3b.c       **** 	//set D2 and D3 as input pins 
+  69:lab3b.c       **** 	DDRD &=~((1 << PD2) | (1 << PD3));
+  70:lab3b.c       **** 	//set up pull-up resistors
+  71:lab3b.c       **** 	PORTD |=((1 << PD2) | (1 << PD3));
+  72:lab3b.c       **** 
+  73:lab3b.c       **** 	initUART(BAUD);
+  74:lab3b.c       **** 	
+  75:lab3b.c       **** 	int counter = 0;
+  76:lab3b.c       **** 	volatile uint8_t input;
+  77:lab3b.c       **** 	int change = NONE;
+  78:lab3b.c       **** 
+  79:lab3b.c       **** 	while(1){
+  80:lab3b.c       **** 
+  81:lab3b.c       **** 		//insert NOP for synchronization
+  82:lab3b.c       **** 		_NOP();
+  83:lab3b.c       **** 
+  84:lab3b.c       **** 		input = PIND;
+  85:lab3b.c       **** 
+  86:lab3b.c       **** 		if((input & (1 << 3)) == 0 ){ //press S2
+  87:lab3b.c       **** 			change = SUBTRACT;
+  88:lab3b.c       **** 		}
+  89:lab3b.c       **** 		else if((input & (1 << 2)) == 0 ){ //press S1
+  90:lab3b.c       **** 			change = ADD;
+  91:lab3b.c       **** 		}
+  92:lab3b.c       **** 		else
+  93:lab3b.c       **** 			continue;
+  94:lab3b.c       **** 
+  95:lab3b.c       **** 		counter = updateCounter(counter, change);
+  96:lab3b.c       **** 		change = NONE;
+  97:lab3b.c       **** 		printDec(counter);
+  98:lab3b.c       **** 		printCR(); 
+  99:lab3b.c       **** 	}
+ 100:lab3b.c       **** 	return 0;
+ 101:lab3b.c       **** }
+ 102:lab3b.c       **** 
+ 103:lab3b.c       **** /*********************************************
+ 104:lab3b.c       **** 	Local Function Definition
+ 105:lab3b.c       **** **********************************************/
+ 106:lab3b.c       **** 
+ 107:lab3b.c       **** /*
+ 108:lab3b.c       ****   Initialize settings for uart functions, the function runs the USART
+ 109:lab3b.c       **** in double speed mode.
+ 110:lab3b.c       **** */ 
+ 111:lab3b.c       **** 
+ 112:lab3b.c       **** static void initUART(uint32_t baud){
+ 113:lab3b.c       **** 
+ 114:lab3b.c       ****    //double-speed mode UBRR formula
+ 115:lab3b.c       ****    unsigned int ubrr = F_CPU/8/baud -1;
+ 116:lab3b.c       ****    //shift MSB and store in UBRR0H 
+ 117:lab3b.c       ****    UBRR0H = (unsigned char) (ubrr >> 8); 
+ 118:lab3b.c       ****    //store LSB in UBRR0L      
+ 119:lab3b.c       ****    UBRR0L = (unsigned char) ubrr;
+ 120:lab3b.c       ****    //enable double speed mode
+ 121:lab3b.c       ****    UCSR0A = (1 << U2X0);
+ 122:lab3b.c       ****    //enable transmitter/receiver 
+ 123:lab3b.c       ****    UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+ 124:lab3b.c       ****    //8-Bit Characters, 1 Stop bits, Even parity
+ 125:lab3b.c       ****    UCSR0C = (1 << UCSZ00) | (1 << UCSZ01) | (1 << UPM01);
+ 126:lab3b.c       ****    
+ 127:lab3b.c       **** }
+ 128:lab3b.c       **** 
+ 129:lab3b.c       **** /* 
+ 130:lab3b.c       **** 	print carriage return & newline
+ 131:lab3b.c       **** */
+ 132:lab3b.c       **** 
+ 133:lab3b.c       **** static void printCR(void){
+ 134:lab3b.c       **** 
+ 135:lab3b.c       **** 	transmitByte((uint8_t)'\n');
+ 136:lab3b.c       **** 	transmitByte((uint8_t)'\r');
+ 137:lab3b.c       **** }
+ 138:lab3b.c       **** 
+ 139:lab3b.c       **** /*
+ 140:lab3b.c       ****    Write byte to UART
+ 141:lab3b.c       **** */ 
+ 142:lab3b.c       **** 
+ 143:lab3b.c       **** static void transmitByte(uint8_t data){
+  14               		.loc 1 143 0
+  15               		.cfi_startproc
+  16               	/* prologue: function */
+  17               	/* frame size = 0 */
+  18               	/* stack size = 0 */
+  19               	.L__stack_usage = 0
+  20               	.LVL0:
+  21               	.L3:
+ 144:lab3b.c       **** 
+ 145:lab3b.c       **** 	// Wait for empty transmit buffer
+ 146:lab3b.c       ****    	while ( !(UCSR0A & (1 << UDRE0)) );
+  22               		.loc 1 146 0 discriminator 1
+  23 0000 9091 C000 		lds r25,192
+  24 0004 95FF      		sbrs r25,5
+  25 0006 00C0      		rjmp .L3
+ 147:lab3b.c       ****     // Start transmission by writing to UDR0 register
+ 148:lab3b.c       ****    	UDR0 = data;
+  26               		.loc 1 148 0
+  27 0008 8093 C600 		sts 198,r24
+  28 000c 0895      		ret
+  29               		.cfi_endproc
+  30               	.LFE10:
+  32               		.section	.rodata.str1.1,"aMS",@progbits,1
+  33               	.LC0:
+  34 0000 2564 00   		.string	"%d"
+  35               		.section	.text.startup,"ax",@progbits
+  36               	.global	main
+  38               	main:
+  39               	.LFB7:
+  66:lab3b.c       **** int main(int argc, char const *argv[]){
+  40               		.loc 1 66 0
+  41               		.cfi_startproc
+  42               	.LVL1:
+  43 0000 CF93      		push r28
+  44               	.LCFI0:
+  45               		.cfi_def_cfa_offset 3
+  46               		.cfi_offset 28, -2
+  47 0002 DF93      		push r29
+  48               	.LCFI1:
+  49               		.cfi_def_cfa_offset 4
+  50               		.cfi_offset 29, -3
+  51 0004 CDB7      		in r28,__SP_L__
+  52 0006 DEB7      		in r29,__SP_H__
+  53               	.LCFI2:
+  54               		.cfi_def_cfa_register 28
+  55 0008 A197      		sbiw r28,33
+  56               	.LCFI3:
+  57               		.cfi_def_cfa_offset 37
+  58 000a 0FB6      		in __tmp_reg__,__SREG__
+  59 000c F894      		cli
+  60 000e DEBF      		out __SP_H__,r29
+  61 0010 0FBE      		out __SREG__,__tmp_reg__
+  62 0012 CDBF      		out __SP_L__,r28
+  63               	/* prologue: function */
+  64               	/* frame size = 33 */
+  65               	/* stack size = 35 */
+  66               	.L__stack_usage = 35
+  69:lab3b.c       **** 	DDRD &=~((1 << PD2) | (1 << PD3));
+  67               		.loc 1 69 0
+  68 0014 8AB1      		in r24,0xa
+  69               	.LVL2:
+  70 0016 837F      		andi r24,lo8(-13)
+  71 0018 8AB9      		out 0xa,r24
+  71:lab3b.c       **** 	PORTD |=((1 << PD2) | (1 << PD3));
+  72               		.loc 1 71 0
+  73 001a 8BB1      		in r24,0xb
+  74 001c 8C60      		ori r24,lo8(12)
+  75 001e 8BB9      		out 0xb,r24
+  76               	.LVL3:
+  77               	.LBB12:
+  78               	.LBB13:
+ 117:lab3b.c       ****    UBRR0H = (unsigned char) (ubrr >> 8); 
+  79               		.loc 1 117 0
+  80 0020 1092 C500 		sts 197,__zero_reg__
+ 119:lab3b.c       ****    UBRR0L = (unsigned char) ubrr;
+  81               		.loc 1 119 0
+  82 0024 8FEC      		ldi r24,lo8(-49)
+  83 0026 8093 C400 		sts 196,r24
+ 121:lab3b.c       ****    UCSR0A = (1 << U2X0);
+  84               		.loc 1 121 0
+  85 002a 82E0      		ldi r24,lo8(2)
+  86 002c 8093 C000 		sts 192,r24
+ 123:lab3b.c       ****    UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+  87               		.loc 1 123 0
+  88 0030 88E1      		ldi r24,lo8(24)
+  89 0032 8093 C100 		sts 193,r24
+ 125:lab3b.c       ****    UCSR0C = (1 << UCSZ00) | (1 << UCSZ01) | (1 << UPM01);
+  90               		.loc 1 125 0
+  91 0036 86E2      		ldi r24,lo8(38)
+  92 0038 8093 C200 		sts 194,r24
+  93               	.LBE13:
+  94               	.LBE12:
+  75:lab3b.c       **** 	int counter = 0;
+  95               		.loc 1 75 0
+  96 003c 00E0      		ldi r16,0
+  97 003e 10E0      		ldi r17,0
+  98               	.LBB14:
+  99               	.LBB15:
+ 149:lab3b.c       **** }  
+ 150:lab3b.c       **** 
+ 151:lab3b.c       **** /*
+ 152:lab3b.c       **** 	Shift characters in order to print characters in a consistent format
+ 153:lab3b.c       **** */
+ 154:lab3b.c       **** static void shiftChars(char chars[], int startPs){
+ 155:lab3b.c       **** 
+ 156:lab3b.c       **** 	int iter = startPs + 1;
+ 157:lab3b.c       **** 	int i = 1;
+ 158:lab3b.c       **** 
+ 159:lab3b.c       **** 	while(1){
+ 160:lab3b.c       **** 		if( iter < 5 ){
+ 161:lab3b.c       **** 			chars[i++] = chars[iter++];
+ 162:lab3b.c       **** 		}
+ 163:lab3b.c       **** 		else{
+ 164:lab3b.c       **** 			int j;
+ 165:lab3b.c       **** 			for(j=i;j<5;j++){
+ 166:lab3b.c       **** 				chars[j] =  ' ';
+ 167:lab3b.c       **** 			}
+ 168:lab3b.c       **** 			break;
+ 169:lab3b.c       **** 		}
+ 170:lab3b.c       **** 	}
+ 171:lab3b.c       **** }
+ 172:lab3b.c       **** 
+ 173:lab3b.c       **** /*
+ 174:lab3b.c       **** 	Print a signed int number to the serial console. The negtive sign is printed if the number is nega
+ 175:lab3b.c       **** 	In addition, necessary character shifting is also performed for pretty formatting. 
+ 176:lab3b.c       **** */
+ 177:lab3b.c       **** 
+ 178:lab3b.c       **** static void printDec(int num){
+ 179:lab3b.c       **** 
+ 180:lab3b.c       **** 	char str[32];
+ 181:lab3b.c       **** 	sprintf(str,"%d",num);
+ 100               		.loc 1 181 0
+ 101 0040 80E0      		ldi r24,lo8(.LC0)
+ 102 0042 C82E      		mov r12,r24
+ 103 0044 80E0      		ldi r24,hi8(.LC0)
+ 104 0046 D82E      		mov r13,r24
+ 105 0048 CE01      		movw r24,r28
+ 106 004a 0196      		adiw r24,1
+ 107 004c 7C01      		movw r14,r24
+ 108               	.LVL4:
+ 109               	.L6:
+ 110               	.LBE15:
+ 111               	.LBE14:
+  82:lab3b.c       **** 		_NOP();
+ 112               		.loc 1 82 0
+ 113               	/* #APP */
+ 114               	 ;  82 "lab3b.c" 1
+ 115 004e 0000      		nop
+ 116               	 ;  0 "" 2
+  84:lab3b.c       **** 		input = PIND;
+ 117               		.loc 1 84 0
+ 118               	/* #NOAPP */
+ 119 0050 89B1      		in r24,0x9
+ 120 0052 89A3      		std Y+33,r24
+  86:lab3b.c       **** 		if((input & (1 << 3)) == 0 ){ //press S2
+ 121               		.loc 1 86 0
+ 122 0054 89A1      		ldd r24,Y+33
+ 123 0056 83FF      		sbrs r24,3
+ 124 0058 00C0      		rjmp .L7
+  89:lab3b.c       **** 		else if((input & (1 << 2)) == 0 ){ //press S1
+ 125               		.loc 1 89 0
+ 126 005a 89A1      		ldd r24,Y+33
+ 127 005c 82FD      		sbrc r24,2
+ 128 005e 00C0      		rjmp .L6
+ 129               	.LVL5:
+ 130               	.LBB19:
+ 131               	.LBB20:
+ 182:lab3b.c       **** 	transmitString(str);
+ 183:lab3b.c       **** }
+ 184:lab3b.c       **** 
+ 185:lab3b.c       **** 
+ 186:lab3b.c       **** 
+ 187:lab3b.c       **** // static void printDec(int num){
+ 188:lab3b.c       **** 
+ 189:lab3b.c       **** //   char chars[6] = {' ',' ',' ',' ',' ','\0'};
+ 190:lab3b.c       **** //   int val = num;
+ 191:lab3b.c       **** //   unsigned char temp = 0;
+ 192:lab3b.c       **** //   int del = 1000;
+ 193:lab3b.c       **** //   int i = 0;
+ 194:lab3b.c       **** //   int startPs = 0;
+ 195:lab3b.c       **** //   int nonzero = 0;
+ 196:lab3b.c       **** 
+ 197:lab3b.c       **** //   if( num < 0){
+ 198:lab3b.c       **** //     val = -num;
+ 199:lab3b.c       **** //     chars[0] = '-';
+ 200:lab3b.c       **** //   }
+ 201:lab3b.c       **** 
+ 202:lab3b.c       **** //   while(1){
+ 203:lab3b.c       **** 
+ 204:lab3b.c       **** //     i++;
+ 205:lab3b.c       **** //     if( i == 4){
+ 206:lab3b.c       **** //       chars[4] = val + '0';
+ 207:lab3b.c       **** //       break;
+ 208:lab3b.c       **** //     }
+ 209:lab3b.c       ****     
+ 210:lab3b.c       **** //     temp = val /del;
+ 211:lab3b.c       **** //     chars[i] = temp + '0';
+ 212:lab3b.c       **** //     nonzero = (temp > 0) ? 1 : nonzero;
+ 213:lab3b.c       **** 
+ 214:lab3b.c       **** //     if( !nonzero ){
+ 215:lab3b.c       **** //         startPs = i;
+ 216:lab3b.c       **** //         chars[i] = ' ';
+ 217:lab3b.c       **** //       }
+ 218:lab3b.c       **** 
+ 219:lab3b.c       **** //     val -= temp * del;
+ 220:lab3b.c       **** //     del /=10;
+ 221:lab3b.c       **** //   }
+ 222:lab3b.c       **** 
+ 223:lab3b.c       **** //   shiftChars(chars,startPs);
+ 224:lab3b.c       **** //   transmitString(chars);
+ 225:lab3b.c       **** // }
+ 226:lab3b.c       **** 
+ 227:lab3b.c       **** /*
+ 228:lab3b.c       **** 	print a string in the serial console
+ 229:lab3b.c       **** */
+ 230:lab3b.c       **** 
+ 231:lab3b.c       **** static void transmitString(char* stringPtr){
+ 232:lab3b.c       **** 
+ 233:lab3b.c       **** 	char* iter = stringPtr;
+ 234:lab3b.c       **** 	while(*iter != '\0'){
+ 235:lab3b.c       **** 		transmitByte(*iter++);
+ 236:lab3b.c       **** 	}
+ 237:lab3b.c       **** }
+ 238:lab3b.c       **** 
+ 239:lab3b.c       **** /*
+ 240:lab3b.c       **** 	Update counter value based on the button pressed.
+ 241:lab3b.c       **** */
+ 242:lab3b.c       **** static int updateCounter(int counter, int change){
+ 243:lab3b.c       **** 
+ 244:lab3b.c       **** 	if( change == ADD ){
+ 245:lab3b.c       **** 
+ 246:lab3b.c       **** 		return (counter + 1);
+ 132               		.loc 1 246 0
+ 133 0060 0F5F      		subi r16,-1
+ 134 0062 1F4F      		sbci r17,-1
+ 135               	.LVL6:
+ 136               	.L12:
+ 137               	.LBE20:
+ 138               	.LBE19:
+ 139               	.LBB22:
+ 140               	.LBB18:
+ 181:lab3b.c       **** 	sprintf(str,"%d",num);
+ 141               		.loc 1 181 0
+ 142 0064 1F93      		push r17
+ 143 0066 0F93      		push r16
+ 144 0068 DF92      		push r13
+ 145 006a CF92      		push r12
+ 146 006c FF92      		push r15
+ 147 006e EF92      		push r14
+ 148 0070 0E94 0000 		call sprintf
+ 149               	.LVL7:
+ 150 0074 5701      		movw r10,r14
+ 151 0076 0F90      		pop __tmp_reg__
+ 152 0078 0F90      		pop __tmp_reg__
+ 153 007a 0F90      		pop __tmp_reg__
+ 154 007c 0F90      		pop __tmp_reg__
+ 155 007e 0F90      		pop __tmp_reg__
+ 156 0080 0F90      		pop __tmp_reg__
+ 157               	.L10:
+ 158               	.LVL8:
+ 159               	.LBB16:
+ 160               	.LBB17:
+ 234:lab3b.c       **** 	while(*iter != '\0'){
+ 161               		.loc 1 234 0
+ 162 0082 F501      		movw r30,r10
+ 163 0084 8191      		ld r24,Z+
+ 164 0086 5F01      		movw r10,r30
+ 165               	.LVL9:
+ 166 0088 8823      		tst r24
+ 167 008a 01F0      		breq .L13
+ 168               	.LVL10:
+ 235:lab3b.c       **** 		transmitByte(*iter++);
+ 169               		.loc 1 235 0
+ 170 008c 0E94 0000 		call transmitByte
+ 171               	.LVL11:
+ 172 0090 00C0      		rjmp .L10
+ 173               	.LVL12:
+ 174               	.L13:
+ 175               	.LBE17:
+ 176               	.LBE16:
+ 177               	.LBE18:
+ 178               	.LBE22:
+ 179               	.LBB23:
+ 180               	.LBB24:
+ 135:lab3b.c       **** 	transmitByte((uint8_t)'\n');
+ 181               		.loc 1 135 0
+ 182 0092 8AE0      		ldi r24,lo8(10)
+ 183 0094 0E94 0000 		call transmitByte
+ 184               	.LVL13:
+ 136:lab3b.c       **** 	transmitByte((uint8_t)'\r');
+ 185               		.loc 1 136 0
+ 186 0098 8DE0      		ldi r24,lo8(13)
+ 187 009a 0E94 0000 		call transmitByte
+ 188               	.LVL14:
+ 189 009e 00C0      		rjmp .L6
+ 190               	.LVL15:
+ 191               	.L7:
+ 192               	.LBE24:
+ 193               	.LBE23:
+ 194               	.LBB25:
+ 195               	.LBB21:
+ 247:lab3b.c       **** 	}
+ 248:lab3b.c       **** 	else if( change == SUBTRACT ){
+ 249:lab3b.c       **** 		return (counter - 1);
+ 196               		.loc 1 249 0
+ 197 00a0 0150      		subi r16,1
+ 198 00a2 1109      		sbc r17,__zero_reg__
+ 199               	.LVL16:
+ 200 00a4 00C0      		rjmp .L12
+ 201               	.LBE21:
+ 202               	.LBE25:
+ 203               		.cfi_endproc
+ 204               	.LFE7:
+ 206               		.text
+ 207               	.Letext0:
+ 208               		.file 2 "/usr/local/CrossPack-AVR-20131216/avr/include/stdint.h"
+ 209               		.file 3 "/usr/local/CrossPack-AVR-20131216/avr/include/stdio.h"
+DEFINED SYMBOLS
+                            *ABS*:00000000 lab3b.c
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHKxpbv.s:2      *ABS*:0000003e __SP_H__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHKxpbv.s:3      *ABS*:0000003d __SP_L__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHKxpbv.s:4      *ABS*:0000003f __SREG__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHKxpbv.s:5      *ABS*:00000000 __tmp_reg__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHKxpbv.s:6      *ABS*:00000001 __zero_reg__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHKxpbv.s:11     .text:00000000 transmitByte
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHKxpbv.s:38     .text.startup:00000000 main
+
+UNDEFINED SYMBOLS
+sprintf
+__do_copy_data

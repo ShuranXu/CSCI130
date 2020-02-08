@@ -1,0 +1,589 @@
+   1               		.file	"lab4a.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               		.section	.rodata.str1.1,"aMS",@progbits,1
+  11               	.LC0:
+  12 0000 2568 7500 		.string	"%hu"
+  13               		.section	.text.startup,"ax",@progbits
+  14               	.global	main
+  16               	main:
+  17               	.LFB7:
+  18               		.file 1 "lab4a.c"
+   1:lab4a.c       **** #include <avr/io.h>
+   2:lab4a.c       **** #include <util/delay.h>
+   3:lab4a.c       **** #include <stdio.h>
+   4:lab4a.c       **** #include <inttypes.h>
+   5:lab4a.c       **** 
+   6:lab4a.c       **** /*
+   7:lab4a.c       **** 
+   8:lab4a.c       **** Assignment:
+   9:lab4a.c       **** 
+  10:lab4a.c       **** i. Connect the IO Trainer board’s Vcc, GND and Pot pins to the Romeo board. The Pot pin can
+  11:lab4a.c       **** connect to any Analog Port.
+  12:lab4a.c       **** 
+  13:lab4a.c       **** ii. Write a C program read the analog value of the pot and display it on the serial terminal. The v
+  14:lab4a.c       **** must be displayed on the same line.
+  15:lab4a.c       **** 
+  16:lab4a.c       **** iii. Aside from the USART functions, the program must have 2 other functions, initADC and analog.
+  17:lab4a.c       **** iv. The example functions In the lecture notes set the ADC for 10-bit resolution. Modify the
+  18:lab4a.c       **** functions to output 8-bit resolution. 
+  19:lab4a.c       **** 	
+  20:lab4a.c       **** */
+  21:lab4a.c       **** 
+  22:lab4a.c       **** /*********************************************
+  23:lab4a.c       **** 	Macros & Enums
+  24:lab4a.c       **** **********************************************/
+  25:lab4a.c       **** 
+  26:lab4a.c       **** #define F_CPU 16000000UL
+  27:lab4a.c       **** #define BAUD 9600
+  28:lab4a.c       **** /*********************************************
+  29:lab4a.c       **** 	Local Function Declaration
+  30:lab4a.c       **** **********************************************/
+  31:lab4a.c       **** 
+  32:lab4a.c       **** static void initUART(uint32_t baud);
+  33:lab4a.c       **** static void transmitByte(uint8_t data);
+  34:lab4a.c       **** static void transmitString(char* stringPtr);
+  35:lab4a.c       **** static void initADC(void);
+  36:lab4a.c       **** static uint16_t analog(uint8_t channel);
+  37:lab4a.c       **** static void printUint16(uint16_t num);
+  38:lab4a.c       **** static void delayMs (uint16_t ms);
+  39:lab4a.c       **** /*********************************************
+  40:lab4a.c       **** 	Main Function
+  41:lab4a.c       **** **********************************************/
+  42:lab4a.c       **** 
+  43:lab4a.c       **** int main(int argc, char const *argv[]){
+  19               		.loc 1 43 0
+  20               		.cfi_startproc
+  21               	.LVL0:
+  22 0000 CF93      		push r28
+  23               	.LCFI0:
+  24               		.cfi_def_cfa_offset 3
+  25               		.cfi_offset 28, -2
+  26 0002 DF93      		push r29
+  27               	.LCFI1:
+  28               		.cfi_def_cfa_offset 4
+  29               		.cfi_offset 29, -3
+  30 0004 00D0      		rcall .
+  31 0006 1F92      		push __zero_reg__
+  32               	.LCFI2:
+  33               		.cfi_def_cfa_offset 7
+  34 0008 CDB7      		in r28,__SP_L__
+  35 000a DEB7      		in r29,__SP_H__
+  36               	.LCFI3:
+  37               		.cfi_def_cfa_register 28
+  38               	/* prologue: function */
+  39               	/* frame size = 3 */
+  40               	/* stack size = 5 */
+  41               	.L__stack_usage = 5
+  42               	.LVL1:
+  43               	.LBB24:
+  44               	.LBB25:
+  44:lab4a.c       **** 
+  45:lab4a.c       **** 	initUART(BAUD);
+  46:lab4a.c       **** 	initADC();
+  47:lab4a.c       **** 	
+  48:lab4a.c       **** 	while(1){
+  49:lab4a.c       **** 
+  50:lab4a.c       **** 		printUint16(analog(0)); //select ADC0 as the input channel
+  51:lab4a.c       **** 		transmitByte((uint8_t)' ');
+  52:lab4a.c       **** 		delayMs(500);
+  53:lab4a.c       **** 	}
+  54:lab4a.c       **** 	return 0;
+  55:lab4a.c       **** }
+  56:lab4a.c       **** 
+  57:lab4a.c       **** /*********************************************
+  58:lab4a.c       **** 	Local Function Definition
+  59:lab4a.c       **** **********************************************/
+  60:lab4a.c       **** 
+  61:lab4a.c       **** /*
+  62:lab4a.c       **** 	Initialize ADC such that it has the following configurations:
+  63:lab4a.c       **** 
+  64:lab4a.c       **** 	1). Vref internally connect to AVcc
+  65:lab4a.c       **** 	2). Right adjusted for 8-bit resolution
+  66:lab4a.c       **** 	3). Disable digital buffer for analog input pins
+  67:lab4a.c       **** */
+  68:lab4a.c       **** 
+  69:lab4a.c       **** static void initADC(void){
+  70:lab4a.c       **** 
+  71:lab4a.c       **** 	ADCSRA = 0;
+  72:lab4a.c       **** 	//enable ADC
+  73:lab4a.c       **** 	ADCSRA |= ( 1 << ADEN );
+  74:lab4a.c       **** 	//Vref internally connect to AVcc
+  75:lab4a.c       **** 	ADMUX |= ( 1 << REFS0 );
+  76:lab4a.c       **** 
+  77:lab4a.c       **** 	//right adjusted for 8-bit resolution
+  78:lab4a.c       **** 	ADCSRA |= (1 << ADPS2) | (1 << ADPS1);
+  79:lab4a.c       **** 	//disable digital input for ADC pins
+  80:lab4a.c       **** 	DIDR0 |= ((1 << ADC5D) | (1 << ADC4D) | (1 << ADC3D) | (1 << ADC2D) | (1 << ADC1D) | (1 << ADC0D))
+  81:lab4a.c       **** 	//start the first conversion
+  82:lab4a.c       **** 	ADCSRA |= (1 << ADSC);
+  83:lab4a.c       **** 
+  84:lab4a.c       **** 	return;
+  85:lab4a.c       **** }
+  86:lab4a.c       **** 
+  87:lab4a.c       **** /*
+  88:lab4a.c       ****   Initialize settings for uart functions, the function runs the USART
+  89:lab4a.c       **** in double speed mode.
+  90:lab4a.c       **** */ 
+  91:lab4a.c       **** 
+  92:lab4a.c       **** static void initUART(uint32_t baud){
+  93:lab4a.c       **** 
+  94:lab4a.c       ****    //double-speed mode UBRR formula
+  95:lab4a.c       ****    unsigned int ubrr = F_CPU/8/baud -1;
+  96:lab4a.c       ****    //shift MSB and store in UBRR0H 
+  97:lab4a.c       ****    UBRR0H = (unsigned char) (ubrr >> 8); 
+  45               		.loc 1 97 0
+  46 000c 1092 C500 		sts 197,__zero_reg__
+  98:lab4a.c       ****    //store LSB in UBRR0L      
+  99:lab4a.c       ****    UBRR0L = (unsigned char) ubrr;
+  47               		.loc 1 99 0
+  48 0010 8FEC      		ldi r24,lo8(-49)
+  49               	.LVL2:
+  50 0012 8093 C400 		sts 196,r24
+ 100:lab4a.c       ****    //enable double speed mode
+ 101:lab4a.c       ****    UCSR0A = (1 << U2X0);
+  51               		.loc 1 101 0
+  52 0016 82E0      		ldi r24,lo8(2)
+  53 0018 8093 C000 		sts 192,r24
+ 102:lab4a.c       ****    //enable transmitter/receiver 
+ 103:lab4a.c       ****    UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+  54               		.loc 1 103 0
+  55 001c 88E1      		ldi r24,lo8(24)
+  56 001e 8093 C100 		sts 193,r24
+ 104:lab4a.c       ****    //8-Bit Characters, 1 Stop bits, Even parity
+ 105:lab4a.c       ****    UCSR0C = (1 << UCSZ00) | (1 << UCSZ01) | (1 << UPM01);
+  57               		.loc 1 105 0
+  58 0022 86E2      		ldi r24,lo8(38)
+  59 0024 8093 C200 		sts 194,r24
+  60               	.LBE25:
+  61               	.LBE24:
+  62               	.LBB26:
+  63               	.LBB27:
+  71:lab4a.c       **** 	ADCSRA = 0;
+  64               		.loc 1 71 0
+  65 0028 1092 7A00 		sts 122,__zero_reg__
+  73:lab4a.c       **** 	ADCSRA |= ( 1 << ADEN );
+  66               		.loc 1 73 0
+  67 002c 8091 7A00 		lds r24,122
+  68 0030 8068      		ori r24,lo8(-128)
+  69 0032 8093 7A00 		sts 122,r24
+  75:lab4a.c       **** 	ADMUX |= ( 1 << REFS0 );
+  70               		.loc 1 75 0
+  71 0036 8091 7C00 		lds r24,124
+  72 003a 8064      		ori r24,lo8(64)
+  73 003c 8093 7C00 		sts 124,r24
+  78:lab4a.c       **** 	ADCSRA |= (1 << ADPS2) | (1 << ADPS1);
+  74               		.loc 1 78 0
+  75 0040 8091 7A00 		lds r24,122
+  76 0044 8660      		ori r24,lo8(6)
+  77 0046 8093 7A00 		sts 122,r24
+  80:lab4a.c       **** 	DIDR0 |= ((1 << ADC5D) | (1 << ADC4D) | (1 << ADC3D) | (1 << ADC2D) | (1 << ADC1D) | (1 << ADC0D))
+  78               		.loc 1 80 0
+  79 004a 8091 7E00 		lds r24,126
+  80 004e 8F63      		ori r24,lo8(63)
+  81 0050 8093 7E00 		sts 126,r24
+  82:lab4a.c       **** 	ADCSRA |= (1 << ADSC);
+  82               		.loc 1 82 0
+  83 0054 8091 7A00 		lds r24,122
+  84 0058 8064      		ori r24,lo8(64)
+  85 005a 8093 7A00 		sts 122,r24
+  86               	.LBE27:
+  87               	.LBE26:
+  88               	.LBB28:
+  89               	.LBB29:
+ 106:lab4a.c       ****    
+ 107:lab4a.c       **** }
+ 108:lab4a.c       **** 
+ 109:lab4a.c       **** /* 
+ 110:lab4a.c       **** 	Analog to digital for 8-bit resolution
+ 111:lab4a.c       **** */
+ 112:lab4a.c       **** 
+ 113:lab4a.c       **** static uint16_t analog(uint8_t channel){
+ 114:lab4a.c       **** 
+ 115:lab4a.c       **** 	//clear MUX[3:0]
+ 116:lab4a.c       **** 	ADMUX &= 0xF0; 
+ 117:lab4a.c       **** 	//select channel
+ 118:lab4a.c       **** 	ADMUX |= channel; 
+ 119:lab4a.c       **** 	//start conversion
+ 120:lab4a.c       **** 	ADCSRA |= (1 << ADSC);
+ 121:lab4a.c       **** 	//wait for the conversion completed
+ 122:lab4a.c       **** 	while(ADCSRA & ( 1 << ADSC));
+ 123:lab4a.c       **** 	//ADIF=1
+ 124:lab4a.c       **** 	ADCSRA |= (1 << ADIF);  
+ 125:lab4a.c       **** 
+ 126:lab4a.c       **** 	return ADC;
+ 127:lab4a.c       **** }
+ 128:lab4a.c       **** 
+ 129:lab4a.c       **** /*
+ 130:lab4a.c       ****    Write byte to UART
+ 131:lab4a.c       **** */ 
+ 132:lab4a.c       **** 
+ 133:lab4a.c       **** static void transmitByte(uint8_t data){
+ 134:lab4a.c       **** 
+ 135:lab4a.c       **** 	// Wait for empty transmit buffer
+ 136:lab4a.c       ****    	while ( !(UCSR0A & (1 << UDRE0)) );
+ 137:lab4a.c       ****     // Start transmission by writing to UDR0 register
+ 138:lab4a.c       ****    	UDR0 = data;
+ 139:lab4a.c       **** }  
+ 140:lab4a.c       **** 
+ 141:lab4a.c       **** /*
+ 142:lab4a.c       **** 	Print a uint16_t number to the serial console. The negtive sign is printed if the number is negati
+ 143:lab4a.c       **** 	In addition, necessary character shifting is also performed for pretty formatting. 
+ 144:lab4a.c       **** */
+ 145:lab4a.c       **** 
+ 146:lab4a.c       **** static void printUint16(uint16_t num){
+ 147:lab4a.c       **** 
+ 148:lab4a.c       **** 	char str[3];
+ 149:lab4a.c       **** 	sprintf(str,"%hu",num);
+  90               		.loc 1 149 0
+  91 005e 80E0      		ldi r24,lo8(.LC0)
+  92 0060 E82E      		mov r14,r24
+  93 0062 80E0      		ldi r24,hi8(.LC0)
+  94 0064 F82E      		mov r15,r24
+  95 0066 8E01      		movw r16,r28
+  96 0068 0F5F      		subi r16,-1
+  97 006a 1F4F      		sbci r17,-1
+  98               	.LBE29:
+  99               	.LBE28:
+ 100               	.LBB35:
+ 101               	.LBB36:
+ 138:lab4a.c       ****    	UDR0 = data;
+ 102               		.loc 1 138 0
+ 103 006c 90E2      		ldi r25,lo8(32)
+ 104 006e D92E      		mov r13,r25
+ 105               	.LVL3:
+ 106               	.L11:
+ 107               	.LBE36:
+ 108               	.LBE35:
+ 109               	.LBB38:
+ 110               	.LBB39:
+ 116:lab4a.c       **** 	ADMUX &= 0xF0; 
+ 111               		.loc 1 116 0 discriminator 1
+ 112 0070 8091 7C00 		lds r24,124
+ 113 0074 807F      		andi r24,lo8(-16)
+ 114 0076 8093 7C00 		sts 124,r24
+ 118:lab4a.c       **** 	ADMUX |= channel; 
+ 115               		.loc 1 118 0 discriminator 1
+ 116 007a 8091 7C00 		lds r24,124
+ 117 007e 8093 7C00 		sts 124,r24
+ 120:lab4a.c       **** 	ADCSRA |= (1 << ADSC);
+ 118               		.loc 1 120 0 discriminator 1
+ 119 0082 8091 7A00 		lds r24,122
+ 120 0086 8064      		ori r24,lo8(64)
+ 121 0088 8093 7A00 		sts 122,r24
+ 122               	.L3:
+ 122:lab4a.c       **** 	while(ADCSRA & ( 1 << ADSC));
+ 123               		.loc 1 122 0
+ 124 008c 8091 7A00 		lds r24,122
+ 125 0090 86FD      		sbrc r24,6
+ 126 0092 00C0      		rjmp .L3
+ 124:lab4a.c       **** 	ADCSRA |= (1 << ADIF);  
+ 127               		.loc 1 124 0
+ 128 0094 8091 7A00 		lds r24,122
+ 129 0098 8061      		ori r24,lo8(16)
+ 130 009a 8093 7A00 		sts 122,r24
+ 126:lab4a.c       **** 	return ADC;
+ 131               		.loc 1 126 0
+ 132 009e 8091 7800 		lds r24,120
+ 133 00a2 9091 7900 		lds r25,120+1
+ 134               	.LVL4:
+ 135               	.LBE39:
+ 136               	.LBE38:
+ 137               	.LBB40:
+ 138               	.LBB34:
+ 139               		.loc 1 149 0
+ 140 00a6 9F93      		push r25
+ 141 00a8 8F93      		push r24
+ 142 00aa FF92      		push r15
+ 143 00ac EF92      		push r14
+ 144 00ae 1F93      		push r17
+ 145 00b0 0F93      		push r16
+ 146 00b2 0E94 0000 		call sprintf
+ 147               	.LVL5:
+ 150:lab4a.c       **** 	str[2] = '\0';
+ 148               		.loc 1 150 0
+ 149 00b6 1B82      		std Y+3,__zero_reg__
+ 150 00b8 F801      		movw r30,r16
+ 151 00ba 0F90      		pop __tmp_reg__
+ 152 00bc 0F90      		pop __tmp_reg__
+ 153 00be 0F90      		pop __tmp_reg__
+ 154 00c0 0F90      		pop __tmp_reg__
+ 155 00c2 0F90      		pop __tmp_reg__
+ 156 00c4 0F90      		pop __tmp_reg__
+ 157               	.L4:
+ 158               	.LVL6:
+ 159               	.LBB30:
+ 160               	.LBB31:
+ 151:lab4a.c       **** 	transmitString(str);
+ 152:lab4a.c       **** }
+ 153:lab4a.c       **** 
+ 154:lab4a.c       **** /*
+ 155:lab4a.c       **** 	print a string in the serial console
+ 156:lab4a.c       **** */
+ 157:lab4a.c       **** 
+ 158:lab4a.c       **** static void transmitString(char* stringPtr){
+ 159:lab4a.c       **** 
+ 160:lab4a.c       **** 	char* iter = stringPtr;
+ 161:lab4a.c       **** 	while(*iter != '\0'){
+ 161               		.loc 1 161 0
+ 162 00c6 8191      		ld r24,Z+
+ 163               	.LVL7:
+ 164 00c8 8823      		tst r24
+ 165 00ca 01F0      		breq .L9
+ 166               	.L6:
+ 167               	.LBB32:
+ 168               	.LBB33:
+ 136:lab4a.c       ****    	while ( !(UCSR0A & (1 << UDRE0)) );
+ 169               		.loc 1 136 0
+ 170 00cc 9091 C000 		lds r25,192
+ 171 00d0 95FF      		sbrs r25,5
+ 172 00d2 00C0      		rjmp .L6
+ 138:lab4a.c       ****    	UDR0 = data;
+ 173               		.loc 1 138 0
+ 174 00d4 8093 C600 		sts 198,r24
+ 175 00d8 00C0      		rjmp .L4
+ 176               	.L9:
+ 177               	.LBE33:
+ 178               	.LBE32:
+ 179               	.LBE31:
+ 180               	.LBE30:
+ 181               	.LBE34:
+ 182               	.LBE40:
+ 183               	.LBB41:
+ 184               	.LBB37:
+ 136:lab4a.c       ****    	while ( !(UCSR0A & (1 << UDRE0)) );
+ 185               		.loc 1 136 0
+ 186 00da 8091 C000 		lds r24,192
+ 187 00de 85FF      		sbrs r24,5
+ 188 00e0 00C0      		rjmp .L9
+ 138:lab4a.c       ****    	UDR0 = data;
+ 189               		.loc 1 138 0
+ 190 00e2 D092 C600 		sts 198,r13
+ 191               	.LVL8:
+ 192 00e6 84EF      		ldi r24,lo8(-12)
+ 193 00e8 91E0      		ldi r25,lo8(1)
+ 194               	.LVL9:
+ 195               	.L12:
+ 196               	.LBE37:
+ 197               	.LBE41:
+ 198               	.LBB42:
+ 199               	.LBB43:
+ 200               	.LBB44:
+ 201               	.LBB45:
+ 202               		.file 2 "/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h"
+   1:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /* Copyright (c) 2002, Marek Michalkiewicz
+   2:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Copyright (c) 2004,2005,2007 Joerg Wunsch
+   3:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Copyright (c) 2007  Florin-Viorel Petrov
+   4:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    All rights reserved.
+   5:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+   6:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Redistribution and use in source and binary forms, with or without
+   7:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    modification, are permitted provided that the following conditions are met:
+   8:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+   9:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    * Redistributions of source code must retain the above copyright
+  10:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer.
+  11:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  12:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    * Redistributions in binary form must reproduce the above copyright
+  13:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer in
+  14:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      the documentation and/or other materials provided with the
+  15:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      distribution.
+  16:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  17:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    * Neither the name of the copyright holders nor the names of
+  18:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      contributors may be used to endorse or promote products derived
+  19:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      from this software without specific prior written permission.
+  20:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  21:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  22:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  23:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  24:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  25:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  26:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  27:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  28:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  29:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  30:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  31:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   POSSIBILITY OF SUCH DAMAGE. */
+  32:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  33:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /* $Id$ */
+  34:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  35:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #ifndef _UTIL_DELAY_H_
+  36:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #define _UTIL_DELAY_H_ 1
+  37:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  38:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #ifndef __HAS_DELAY_CYCLES
+  39:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #define __HAS_DELAY_CYCLES 1
+  40:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+  41:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  42:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #include <inttypes.h>
+  43:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #include <util/delay_basic.h>
+  44:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #include <math.h>
+  45:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  46:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /** \file */
+  47:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /** \defgroup util_delay <util/delay.h>: Convenience functions for busy-wait delay loops
+  48:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     \code
+  49:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     #define F_CPU 1000000UL  // 1 MHz
+  50:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     //#define F_CPU 14.7456E6
+  51:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     #include <util/delay.h>
+  52:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     \endcode
+  53:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  54:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     \note As an alternative method, it is possible to pass the
+  55:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     F_CPU macro down to the compiler from the Makefile.
+  56:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     Obviously, in that case, no \c \#define statement should be
+  57:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     used.
+  58:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  59:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     The functions in this header file are wrappers around the basic
+  60:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     busy-wait functions from <util/delay_basic.h>.  They are meant as
+  61:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     convenience functions where actual time values can be specified
+  62:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     rather than a number of cycles to wait for.  The idea behind is
+  63:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     that compile-time constant expressions will be eliminated by
+  64:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     compiler optimization so floating-point expressions can be used
+  65:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     to calculate the number of delay cycles needed based on the CPU
+  66:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     frequency passed by the macro F_CPU.
+  67:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  68:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     \note In order for these functions to work as intended, compiler
+  69:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     optimizations <em>must</em> be enabled, and the delay time
+  70:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     <em>must</em> be an expression that is a known constant at
+  71:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     compile-time.  If these requirements are not met, the resulting
+  72:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     delay will be much longer (and basically unpredictable), and
+  73:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     applications that otherwise do not use floating-point calculations
+  74:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     will experience severe code bloat by the floating-point library
+  75:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     routines linked into the application.
+  76:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  77:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     The functions available allow the specification of microsecond, and
+  78:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     millisecond delays directly, using the application-supplied macro
+  79:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     F_CPU as the CPU clock frequency (in Hertz).
+  80:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  81:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** */
+  82:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  83:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #if !defined(__DOXYGEN__)
+  84:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** static inline void _delay_us(double __us) __attribute__((always_inline));
+  85:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** static inline void _delay_ms(double __ms) __attribute__((always_inline));
+  86:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+  87:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  88:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #ifndef F_CPU
+  89:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /* prevent compiler error by supplying a default */
+  90:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** # warning "F_CPU not defined for <util/delay.h>"
+  91:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** # define F_CPU 1000000UL
+  92:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+  93:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  94:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #ifndef __OPTIMIZE__
+  95:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** # warning "Compiler optimizations disabled; functions from <util/delay.h> won't work as designed"
+  96:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+  97:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  98:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+  99:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 100:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   __STDC_HOSTED__
+ 101:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #  include <math.h>
+ 102:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+ 103:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 104:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /**
+ 105:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    \ingroup util_delay
+ 106:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 107:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Perform a delay of \c __ms milliseconds, using _delay_loop_2().
+ 108:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 109:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    The macro F_CPU is supposed to be defined to a
+ 110:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 111:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 112:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    The maximal possible delay is 262.14 ms / F_CPU in MHz.
+ 113:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 114:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    When the user request delay which exceed the maximum possible one,
+ 115:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    _delay_ms() provides a decreased resolution functionality. In this
+ 116:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    mode _delay_ms() will work with a resolution of 1/10 ms, providing
+ 117:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    delays up to 6.5535 seconds (independent from CPU frequency).  The
+ 118:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    user will not be informed about decreased resolution.
+ 119:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 120:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles(unsigned long)
+ 121:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    support, maximal possible delay is 4294967.295 ms/ F_CPU in MHz. For
+ 122:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    values greater than the maximal possible delay, overflows results in
+ 123:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    no delay i.e., 0ms.
+ 124:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 125:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Conversion of __us into clock cycles may not always result in integer.
+ 126:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    By default, the clock cycles rounded up to next integer. This ensures that
+ 127:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    the user gets atleast __us microseconds of delay.
+ 128:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 129:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Alternatively, user can define __DELAY_ROUND_DOWN__ and __DELAY_ROUND_CLOSEST__
+ 130:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    to round down and round to closest integer.
+ 131:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 132:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Note: The new implementation of _delay_ms(double __ms) with 
+ 133:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     __builtin_avr_delay_cycles(unsigned long) support is not backward compatible. 
+ 134:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    User can define __DELAY_BACKWARD_COMPATIBLE__ to get a backward compatible delay.
+ 135:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Also, the backward compatible
+ 136:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    algorithm will be chosen if the code is compiled in a <em>freestanding
+ 137:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    environment</em> (GCC option \c -ffreestanding), as the math functions
+ 138:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    required for rounding are not available to the compiler then.
+ 139:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 140:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****  */
+ 141:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** void
+ 142:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** _delay_ms(double __ms)
+ 143:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** {
+ 144:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	double __tmp ; 
+ 145:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 146:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 147:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   __STDC_HOSTED__
+ 148:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	uint32_t __ticks_dc;
+ 149:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 150:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 1e3) * __ms;
+ 151:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 152:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 153:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 154:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 155:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 156:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 157:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 158:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#else
+ 159:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		//round up by default
+ 160:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 161:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#endif
+ 162:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 163:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 203               		.loc 2 163 0
+ 204 00ea EFE9      		ldi r30,lo8(3999)
+ 205 00ec FFE0      		ldi r31,hi8(3999)
+ 206 00ee 3197      		1: sbiw r30,1
+ 207 00f0 01F4      		brne 1b
+ 208 00f2 00C0      		rjmp .
+ 209 00f4 0000      		nop
+ 210               	.LVL10:
+ 211 00f6 0197      		sbiw r24,1
+ 212               	.LVL11:
+ 213               	.LBE45:
+ 214               	.LBE44:
+ 162:lab4a.c       **** 		transmitByte(*iter++);
+ 163:lab4a.c       **** 	}
+ 164:lab4a.c       **** }
+ 165:lab4a.c       **** 
+ 166:lab4a.c       **** /*
+ 167:lab4a.c       **** 	delay function
+ 168:lab4a.c       **** */
+ 169:lab4a.c       **** 
+ 170:lab4a.c       **** static void delayMs (uint16_t ms) {
+ 171:lab4a.c       **** 	uint16_t i;
+ 172:lab4a.c       **** 	for (i = 0; i < ms; i++)
+ 215               		.loc 1 172 0
+ 216 00f8 0097      		sbiw r24,0
+ 217 00fa 01F4      		brne .L12
+ 218 00fc 00C0      		rjmp .L11
+ 219               	.LBE43:
+ 220               	.LBE42:
+ 221               		.cfi_endproc
+ 222               	.LFE7:
+ 224               		.text
+ 225               	.Letext0:
+ 226               		.file 3 "/usr/local/CrossPack-AVR-20131216/avr/include/stdint.h"
+ 227               		.file 4 "/usr/local/CrossPack-AVR-20131216/avr/include/stdio.h"
+DEFINED SYMBOLS
+                            *ABS*:00000000 lab4a.c
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHDBuo2.s:2      *ABS*:0000003e __SP_H__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHDBuo2.s:3      *ABS*:0000003d __SP_L__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHDBuo2.s:4      *ABS*:0000003f __SREG__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHDBuo2.s:5      *ABS*:00000000 __tmp_reg__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHDBuo2.s:6      *ABS*:00000001 __zero_reg__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccHDBuo2.s:16     .text.startup:00000000 main
+
+UNDEFINED SYMBOLS
+sprintf
+__do_copy_data

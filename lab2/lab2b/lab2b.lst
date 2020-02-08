@@ -1,0 +1,670 @@
+   1               		.file	"lab2b.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               		.section	.text.startup,"ax",@progbits
+  11               	.global	main
+  13               	main:
+  14               	.LFB6:
+  15               		.file 1 "lab2b.c"
+   1:lab2b.c       **** #include <avr/io.h>
+   2:lab2b.c       **** #include <util/delay.h>
+   3:lab2b.c       **** #include <avr/cpufunc.h>
+   4:lab2b.c       **** 
+   5:lab2b.c       **** /*
+   6:lab2b.c       **** 
+   7:lab2b.c       **** Assignment:
+   8:lab2b.c       **** 
+   9:lab2b.c       **** Write a C program that uses the 8 LEDs as a binary display and 2 momentary switches as input.
+  10:lab2b.c       **** The program should keep a count. When one of the two switches is pressed then released, the 
+  11:lab2b.c       **** count should increase by 1 and if the other is pressed then released, the count should decrease by
+  12:lab2b.c       **** 1. The count should go from 0 to 255 and loop back to 0. The program should display the binary
+  13:lab2b.c       **** representation of the count using the 8 LEDs.
+  14:lab2b.c       **** 
+  15:lab2b.c       **** Connection Diagram:
+  16:lab2b.c       **** 
+  17:lab2b.c       **** Atmega328p | Romeo board | IO Board | Jumper Component
+  18:lab2b.c       **** 
+  19:lab2b.c       **** 	PD2    |     D2      |  JP3_1   | 	D1A  
+  20:lab2b.c       **** 	PD3    |     D3      |  JP3_2   | 	D1B  
+  21:lab2b.c       **** 	PD4    |     D4      |  JP3_3   | 	D1C
+  22:lab2b.c       **** 	PD5    |     D5      |  JP3_4   | 	D1D  
+  23:lab2b.c       **** 	PD6    |     D6      |  JP3_5   | 	D1E  
+  24:lab2b.c       **** 	PD7    |     D7      |  JP3_6   | 	D1F 
+  25:lab2b.c       **** 	PB0    |     D8      |  JP3_7   | 	D1G  
+  26:lab2b.c       **** 	PB1    |     D9      |  JP3_8   | 	D1H
+  27:lab2b.c       **** 	PB2    |     D10     |  JP2_5   | 	S1  
+  28:lab2b.c       **** 	PB3    |     D11     |  JP2_6   | 	S2
+  29:lab2b.c       **** 
+  30:lab2b.c       **** Idea:
+  31:lab2b.c       **** 
+  32:lab2b.c       **** Let us set S1 to be the counter incrementer, and S2 to be the counter decrementer. The step is 1.
+  33:lab2b.c       **** 
+  34:lab2b.c       **** */
+  35:lab2b.c       **** 
+  36:lab2b.c       **** /*********************************************
+  37:lab2b.c       **** 	Macros
+  38:lab2b.c       **** **********************************************/
+  39:lab2b.c       **** 
+  40:lab2b.c       **** #define MIN 0U
+  41:lab2b.c       **** #define MAX 255U
+  42:lab2b.c       **** #define F_CPU 16000000UL
+  43:lab2b.c       **** 
+  44:lab2b.c       **** 
+  45:lab2b.c       **** enum{
+  46:lab2b.c       **** 	NONE=0,
+  47:lab2b.c       **** 	ADD=1,
+  48:lab2b.c       **** 	SUBTRACT=2
+  49:lab2b.c       **** };
+  50:lab2b.c       **** 
+  51:lab2b.c       **** /*********************************************
+  52:lab2b.c       **** 	Local Function Declaration
+  53:lab2b.c       **** **********************************************/
+  54:lab2b.c       **** 
+  55:lab2b.c       **** static void delay_us (uint16_t us);
+  56:lab2b.c       **** static void convert_to_binary(uint8_t bits[], uint8_t number);
+  57:lab2b.c       **** static void update_leds(uint8_t bits[]);
+  58:lab2b.c       **** static uint8_t update_counter(uint8_t counter, int change);
+  59:lab2b.c       **** 
+  60:lab2b.c       **** /*********************************************
+  61:lab2b.c       **** 	Main Function
+  62:lab2b.c       **** **********************************************/
+  63:lab2b.c       **** 
+  64:lab2b.c       **** int main(int argc, char const *argv[])
+  65:lab2b.c       **** {
+  16               		.loc 1 65 0
+  17               		.cfi_startproc
+  18               	.LVL0:
+  19 0000 CF93      		push r28
+  20               	.LCFI0:
+  21               		.cfi_def_cfa_offset 3
+  22               		.cfi_offset 28, -2
+  23 0002 DF93      		push r29
+  24               	.LCFI1:
+  25               		.cfi_def_cfa_offset 4
+  26               		.cfi_offset 29, -3
+  27 0004 CDB7      		in r28,__SP_L__
+  28 0006 DEB7      		in r29,__SP_H__
+  29               	.LCFI2:
+  30               		.cfi_def_cfa_register 28
+  31 0008 2997      		sbiw r28,9
+  32               	.LCFI3:
+  33               		.cfi_def_cfa_offset 13
+  34 000a 0FB6      		in __tmp_reg__,__SREG__
+  35 000c F894      		cli
+  36 000e DEBF      		out __SP_H__,r29
+  37 0010 0FBE      		out __SREG__,__tmp_reg__
+  38 0012 CDBF      		out __SP_L__,r28
+  39               	/* prologue: function */
+  40               	/* frame size = 9 */
+  41               	/* stack size = 11 */
+  42               	.L__stack_usage = 11
+  66:lab2b.c       **** 	//set D2-D7 as output pins
+  67:lab2b.c       **** 	DDRD |= ((1 << PD2)| (1 << PD3) | (1 << PD4 ) | ( 1 << PD5 ) | ( 1 << PD6 ) | ( 1 << PD7 )); 
+  43               		.loc 1 67 0
+  44 0014 8AB1      		in r24,0xa
+  45               	.LVL1:
+  46 0016 8C6F      		ori r24,lo8(-4)
+  47 0018 8AB9      		out 0xa,r24
+  68:lab2b.c       **** 	//set B0 and B1 as output pins
+  69:lab2b.c       **** 	DDRB |= ((1 << PB0) | (1 << PB1));
+  48               		.loc 1 69 0
+  49 001a 84B1      		in r24,0x4
+  50 001c 8360      		ori r24,lo8(3)
+  51 001e 84B9      		out 0x4,r24
+  70:lab2b.c       **** 
+  71:lab2b.c       **** 	//set B2 and B3 as input pins 
+  72:lab2b.c       **** 	DDRB &=~((1 << PB2) | (1 << PB3));
+  52               		.loc 1 72 0
+  53 0020 84B1      		in r24,0x4
+  54 0022 837F      		andi r24,lo8(-13)
+  55 0024 84B9      		out 0x4,r24
+  73:lab2b.c       **** 	//set up pull-up resistors
+  74:lab2b.c       **** 	PORTB |=((1 << PB2) | (1 << PB3));
+  56               		.loc 1 74 0
+  57 0026 85B1      		in r24,0x5
+  58 0028 8C60      		ori r24,lo8(12)
+  59 002a 85B9      		out 0x5,r24
+  60               	.LVL2:
+  75:lab2b.c       **** 
+  76:lab2b.c       **** 	uint8_t bits[8];
+  77:lab2b.c       **** 	uint8_t count = MIN;
+  78:lab2b.c       **** 	volatile uint8_t input;
+  79:lab2b.c       **** 	int change = NONE;
+  61               		.loc 1 79 0
+  62 002c 80E0      		ldi r24,0
+  63 002e 90E0      		ldi r25,0
+  77:lab2b.c       **** 	uint8_t count = MIN;
+  64               		.loc 1 77 0
+  65 0030 60E0      		ldi r22,0
+  66               	.LVL3:
+  67               	.LBB16:
+  68               	.LBB17:
+  80:lab2b.c       **** 
+  81:lab2b.c       **** 	while(1){
+  82:lab2b.c       **** 
+  83:lab2b.c       **** 		_NOP();
+  84:lab2b.c       **** 		input = PINB;
+  85:lab2b.c       **** 
+  86:lab2b.c       **** 		if( ((input >> 3) & 0b00000001) == 0 ){ //press S2
+  87:lab2b.c       **** 
+  88:lab2b.c       **** 			change = SUBTRACT;
+  89:lab2b.c       **** 		}
+  90:lab2b.c       **** 		else if( ((input >> 2) & 0b00000001) == 0 ){ //press S1
+  91:lab2b.c       **** 
+  92:lab2b.c       **** 			change = ADD;
+  93:lab2b.c       **** 		}
+  94:lab2b.c       **** 		else{
+  95:lab2b.c       **** 			count = update_counter(count, change);
+  96:lab2b.c       **** 			change = NONE;
+  97:lab2b.c       **** 			convert_to_binary(bits,count);
+  98:lab2b.c       **** 			update_leds(bits);
+  99:lab2b.c       **** 		}
+ 100:lab2b.c       **** 	}
+ 101:lab2b.c       **** }
+ 102:lab2b.c       **** 
+ 103:lab2b.c       **** 
+ 104:lab2b.c       **** /*********************************************
+ 105:lab2b.c       **** 	Local Function Definition
+ 106:lab2b.c       **** **********************************************/
+ 107:lab2b.c       **** 
+ 108:lab2b.c       **** static uint8_t update_counter(uint8_t counter, int change){
+ 109:lab2b.c       **** 
+ 110:lab2b.c       **** 	if( change == ADD ){
+ 111:lab2b.c       **** 
+ 112:lab2b.c       **** 		return (counter + 1);
+ 113:lab2b.c       **** 	}
+ 114:lab2b.c       **** 	else if( change == SUBTRACT ){
+ 115:lab2b.c       **** 		return (counter - 1);
+ 116:lab2b.c       **** 	}
+ 117:lab2b.c       **** 	else
+ 118:lab2b.c       **** 		return counter;
+ 119:lab2b.c       **** }
+ 120:lab2b.c       **** 
+ 121:lab2b.c       **** static void update_leds(uint8_t bits[]){
+ 122:lab2b.c       **** 
+ 123:lab2b.c       **** 	PORTD = 0b00000000;
+ 124:lab2b.c       **** 	PORTB = 0b00001100; //need to ensure that pull-up resistors are always set.
+  69               		.loc 1 124 0
+  70 0032 7CE0      		ldi r23,lo8(12)
+  71               	.LVL4:
+  72               	.L2:
+  73               	.LBE17:
+  74               	.LBE16:
+  83:lab2b.c       **** 		_NOP();
+  75               		.loc 1 83 0
+  76               	/* #APP */
+  77               	 ;  83 "lab2b.c" 1
+  78 0034 0000      		nop
+  79               	 ;  0 "" 2
+  84:lab2b.c       **** 		input = PINB;
+  80               		.loc 1 84 0
+  81               	/* #NOAPP */
+  82 0036 23B1      		in r18,0x3
+  83 0038 2987      		std Y+9,r18
+  86:lab2b.c       **** 		if( ((input >> 3) & 0b00000001) == 0 ){ //press S2
+  84               		.loc 1 86 0
+  85 003a 2985      		ldd r18,Y+9
+  86 003c 23FD      		sbrc r18,3
+  87 003e 00C0      		rjmp .L13
+  88:lab2b.c       **** 			change = SUBTRACT;
+  88               		.loc 1 88 0
+  89 0040 82E0      		ldi r24,lo8(2)
+  90 0042 90E0      		ldi r25,0
+  91               	.LVL5:
+  92 0044 00C0      		rjmp .L2
+  93               	.LVL6:
+  94               	.L13:
+  90:lab2b.c       **** 		else if( ((input >> 2) & 0b00000001) == 0 ){ //press S1
+  95               		.loc 1 90 0
+  96 0046 2985      		ldd r18,Y+9
+  97 0048 22FD      		sbrc r18,2
+  98 004a 00C0      		rjmp .L14
+  92:lab2b.c       **** 			change = ADD;
+  99               		.loc 1 92 0
+ 100 004c 81E0      		ldi r24,lo8(1)
+ 101 004e 90E0      		ldi r25,0
+ 102               	.LVL7:
+ 103 0050 00C0      		rjmp .L2
+ 104               	.LVL8:
+ 105               	.L14:
+ 106               	.LBB23:
+ 107               	.LBB24:
+ 110:lab2b.c       **** 	if( change == ADD ){
+ 108               		.loc 1 110 0
+ 109 0052 8130      		cpi r24,1
+ 110 0054 9105      		cpc r25,__zero_reg__
+ 111 0056 01F4      		brne .L4
+ 112:lab2b.c       **** 		return (counter + 1);
+ 112               		.loc 1 112 0
+ 113 0058 6F5F      		subi r22,lo8(-(1))
+ 114               	.LVL9:
+ 115 005a 00C0      		rjmp .L5
+ 116               	.LVL10:
+ 117               	.L4:
+ 114:lab2b.c       **** 	else if( change == SUBTRACT ){
+ 118               		.loc 1 114 0
+ 119 005c 0297      		sbiw r24,2
+ 120 005e 01F4      		brne .L5
+ 115:lab2b.c       **** 		return (counter - 1);
+ 121               		.loc 1 115 0
+ 122 0060 6150      		subi r22,lo8(-(-1))
+ 123               	.LVL11:
+ 124               	.L5:
+ 125               	.LBE24:
+ 126               	.LBE23:
+ 127               	.LBB25:
+ 128               	.LBB26:
+ 125:lab2b.c       **** 	
+ 126:lab2b.c       **** 	delay_us(10);
+ 127:lab2b.c       **** 	PORTD |= ((bits[0] << PD2) | (bits[1] << PD3) | (bits[2] << PD4) | (bits[3] << PD5) | (bits[4] << 
+ 128:lab2b.c       **** 	PORTB |= ((bits[6] << PB0) | (bits[7] << PB1));
+ 129:lab2b.c       **** 	
+ 130:lab2b.c       **** 	return;
+ 131:lab2b.c       **** }
+ 132:lab2b.c       **** 
+ 133:lab2b.c       **** static void convert_to_binary(uint8_t bits[], uint8_t number){
+ 134:lab2b.c       **** 
+ 135:lab2b.c       **** 	int c,k;
+ 136:lab2b.c       **** 
+ 137:lab2b.c       **** 	for (c = 7; c >= 0; c--){
+ 129               		.loc 1 137 0
+ 130 0062 87E0      		ldi r24,lo8(7)
+ 131 0064 90E0      		ldi r25,0
+ 132               	.LVL12:
+ 138:lab2b.c       ****     	k = number >> c;
+ 133               		.loc 1 138 0
+ 134 0066 462F      		mov r20,r22
+ 135 0068 50E0      		ldi r21,0
+ 136               	.LVL13:
+ 137               	.L7:
+ 138 006a E1E0      		ldi r30,lo8(1)
+ 139 006c F0E0      		ldi r31,0
+ 140 006e EC0F      		add r30,r28
+ 141 0070 FD1F      		adc r31,r29
+ 142 0072 E80F      		add r30,r24
+ 143 0074 F91F      		adc r31,r25
+ 144 0076 9A01      		movw r18,r20
+ 145 0078 082E      		mov r0,r24
+ 146 007a 00C0      		rjmp 2f
+ 147               		1:
+ 148 007c 3595      		asr r19
+ 149 007e 2795      		ror r18
+ 150               		2:
+ 151 0080 0A94      		dec r0
+ 152 0082 02F4      		brpl 1b
+ 139:lab2b.c       ****     	bits[c] = (k & 1) ? 1 : 0;
+ 153               		.loc 1 139 0
+ 154 0084 2170      		andi r18,1
+ 155 0086 3327      		clr r19
+ 156 0088 2083      		st Z,r18
+ 137:lab2b.c       **** 	for (c = 7; c >= 0; c--){
+ 157               		.loc 1 137 0
+ 158               	.LVL14:
+ 159 008a 0197      		sbiw r24,1
+ 160 008c 00F4      		brcc .L7
+ 161               	.LBE26:
+ 162               	.LBE25:
+ 163               	.LBB27:
+ 164               	.LBB22:
+ 123:lab2b.c       **** 	PORTD = 0b00000000;
+ 165               		.loc 1 123 0
+ 166 008e 1BB8      		out 0xb,__zero_reg__
+ 124:lab2b.c       **** 	PORTB = 0b00001100; //need to ensure that pull-up resistors are always set.
+ 167               		.loc 1 124 0
+ 168 0090 75B9      		out 0x5,r23
+ 169               	.LVL15:
+ 170 0092 8AE0      		ldi r24,lo8(10)
+ 171 0094 90E0      		ldi r25,0
+ 172               	.LVL16:
+ 173               	.L9:
+ 174               	.LBB18:
+ 175               	.LBB19:
+ 176               	.LBB20:
+ 177               	.LBB21:
+ 178               		.file 2 "/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h"
+   1:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /* Copyright (c) 2002, Marek Michalkiewicz
+   2:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Copyright (c) 2004,2005,2007 Joerg Wunsch
+   3:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Copyright (c) 2007  Florin-Viorel Petrov
+   4:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    All rights reserved.
+   5:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+   6:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Redistribution and use in source and binary forms, with or without
+   7:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    modification, are permitted provided that the following conditions are met:
+   8:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+   9:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    * Redistributions of source code must retain the above copyright
+  10:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer.
+  11:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  12:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    * Redistributions in binary form must reproduce the above copyright
+  13:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer in
+  14:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      the documentation and/or other materials provided with the
+  15:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      distribution.
+  16:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  17:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    * Neither the name of the copyright holders nor the names of
+  18:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      contributors may be used to endorse or promote products derived
+  19:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****      from this software without specific prior written permission.
+  20:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  21:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  22:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  23:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  24:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  25:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  26:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  27:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  28:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  29:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  30:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  31:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   POSSIBILITY OF SUCH DAMAGE. */
+  32:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  33:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /* $Id$ */
+  34:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  35:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #ifndef _UTIL_DELAY_H_
+  36:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #define _UTIL_DELAY_H_ 1
+  37:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  38:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #ifndef __HAS_DELAY_CYCLES
+  39:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #define __HAS_DELAY_CYCLES 1
+  40:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+  41:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  42:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #include <inttypes.h>
+  43:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #include <util/delay_basic.h>
+  44:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #include <math.h>
+  45:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  46:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /** \file */
+  47:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /** \defgroup util_delay <util/delay.h>: Convenience functions for busy-wait delay loops
+  48:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     \code
+  49:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     #define F_CPU 1000000UL  // 1 MHz
+  50:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     //#define F_CPU 14.7456E6
+  51:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     #include <util/delay.h>
+  52:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     \endcode
+  53:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  54:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     \note As an alternative method, it is possible to pass the
+  55:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     F_CPU macro down to the compiler from the Makefile.
+  56:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     Obviously, in that case, no \c \#define statement should be
+  57:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     used.
+  58:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  59:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     The functions in this header file are wrappers around the basic
+  60:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     busy-wait functions from <util/delay_basic.h>.  They are meant as
+  61:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     convenience functions where actual time values can be specified
+  62:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     rather than a number of cycles to wait for.  The idea behind is
+  63:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     that compile-time constant expressions will be eliminated by
+  64:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     compiler optimization so floating-point expressions can be used
+  65:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     to calculate the number of delay cycles needed based on the CPU
+  66:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     frequency passed by the macro F_CPU.
+  67:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  68:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     \note In order for these functions to work as intended, compiler
+  69:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     optimizations <em>must</em> be enabled, and the delay time
+  70:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     <em>must</em> be an expression that is a known constant at
+  71:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     compile-time.  If these requirements are not met, the resulting
+  72:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     delay will be much longer (and basically unpredictable), and
+  73:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     applications that otherwise do not use floating-point calculations
+  74:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     will experience severe code bloat by the floating-point library
+  75:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     routines linked into the application.
+  76:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  77:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     The functions available allow the specification of microsecond, and
+  78:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     millisecond delays directly, using the application-supplied macro
+  79:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     F_CPU as the CPU clock frequency (in Hertz).
+  80:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  81:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** */
+  82:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  83:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #if !defined(__DOXYGEN__)
+  84:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** static inline void _delay_us(double __us) __attribute__((always_inline));
+  85:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** static inline void _delay_ms(double __ms) __attribute__((always_inline));
+  86:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+  87:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  88:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #ifndef F_CPU
+  89:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /* prevent compiler error by supplying a default */
+  90:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** # warning "F_CPU not defined for <util/delay.h>"
+  91:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** # define F_CPU 1000000UL
+  92:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+  93:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  94:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #ifndef __OPTIMIZE__
+  95:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** # warning "Compiler optimizations disabled; functions from <util/delay.h> won't work as designed"
+  96:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+  97:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+  98:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+  99:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 100:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   __STDC_HOSTED__
+ 101:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #  include <math.h>
+ 102:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+ 103:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 104:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /**
+ 105:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    \ingroup util_delay
+ 106:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 107:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Perform a delay of \c __ms milliseconds, using _delay_loop_2().
+ 108:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 109:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    The macro F_CPU is supposed to be defined to a
+ 110:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 111:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 112:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    The maximal possible delay is 262.14 ms / F_CPU in MHz.
+ 113:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 114:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    When the user request delay which exceed the maximum possible one,
+ 115:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    _delay_ms() provides a decreased resolution functionality. In this
+ 116:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    mode _delay_ms() will work with a resolution of 1/10 ms, providing
+ 117:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    delays up to 6.5535 seconds (independent from CPU frequency).  The
+ 118:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    user will not be informed about decreased resolution.
+ 119:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 120:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles(unsigned long)
+ 121:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    support, maximal possible delay is 4294967.295 ms/ F_CPU in MHz. For
+ 122:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    values greater than the maximal possible delay, overflows results in
+ 123:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    no delay i.e., 0ms.
+ 124:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 125:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Conversion of __us into clock cycles may not always result in integer.
+ 126:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    By default, the clock cycles rounded up to next integer. This ensures that
+ 127:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    the user gets atleast __us microseconds of delay.
+ 128:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 129:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Alternatively, user can define __DELAY_ROUND_DOWN__ and __DELAY_ROUND_CLOSEST__
+ 130:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    to round down and round to closest integer.
+ 131:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 132:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Note: The new implementation of _delay_ms(double __ms) with 
+ 133:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     __builtin_avr_delay_cycles(unsigned long) support is not backward compatible. 
+ 134:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    User can define __DELAY_BACKWARD_COMPATIBLE__ to get a backward compatible delay.
+ 135:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Also, the backward compatible
+ 136:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    algorithm will be chosen if the code is compiled in a <em>freestanding
+ 137:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    environment</em> (GCC option \c -ffreestanding), as the math functions
+ 138:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    required for rounding are not available to the compiler then.
+ 139:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 140:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****  */
+ 141:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** void
+ 142:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** _delay_ms(double __ms)
+ 143:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** {
+ 144:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	double __tmp ; 
+ 145:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 146:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 147:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   __STDC_HOSTED__
+ 148:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	uint32_t __ticks_dc;
+ 149:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 150:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 1e3) * __ms;
+ 151:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 152:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 153:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 154:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 155:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 156:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 157:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 158:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#else
+ 159:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		//round up by default
+ 160:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 161:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#endif
+ 162:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 163:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 164:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 165:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #else
+ 166:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	uint16_t __ticks;
+ 167:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 4e3) * __ms;
+ 168:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	if (__tmp < 1.0)
+ 169:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks = 1;
+ 170:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	else if (__tmp > 65535)
+ 171:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	{
+ 172:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		//	__ticks = requested delay in 1/10 ms
+ 173:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks = (uint16_t) (__ms * 10.0);
+ 174:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		while(__ticks)
+ 175:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		{
+ 176:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 			// wait 1/10 ms
+ 177:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 			_delay_loop_2(((F_CPU) / 4e3) / 10);
+ 178:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 			__ticks --;
+ 179:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		}
+ 180:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		return;
+ 181:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	}
+ 182:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	else
+ 183:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks = (uint16_t)__tmp;
+ 184:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	_delay_loop_2(__ticks);
+ 185:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #endif
+ 186:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** }
+ 187:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 188:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** /**
+ 189:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    \ingroup util_delay
+ 190:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 191:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Perform a delay of \c __us microseconds, using _delay_loop_1().
+ 192:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 193:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    The macro F_CPU is supposed to be defined to a
+ 194:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 195:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 196:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    The maximal possible delay is 768 us / F_CPU in MHz.
+ 197:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 198:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    If the user requests a delay greater than the maximal possible one,
+ 199:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    _delay_us() will automatically call _delay_ms() instead.  The user
+ 200:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    will not be informed about this case.
+ 201:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 202:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles(unsigned long)
+ 203:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    support, maximal possible delay is 4294967.295 us/ F_CPU in MHz. For
+ 204:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    values greater than the maximal possible delay, overflow results in
+ 205:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    no delay i.e., 0us.
+ 206:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   
+ 207:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Conversion of __us into clock cycles may not always result in integer.
+ 208:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    By default, the clock cycles rounded up to next integer. This ensures that
+ 209:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    the user gets atleast __us microseconds of delay.
+ 210:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 211:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Alternatively, user can define __DELAY_ROUND_DOWN__ and __DELAY_ROUND_CLOSEST__
+ 212:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    to round down and round to closest integer.
+ 213:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****  
+ 214:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Note: The new implementation of _delay_us(double __us) with 
+ 215:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****     __builtin_avr_delay_cycles(unsigned long) support is not backward compatible.
+ 216:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    User can define __DELAY_BACKWARD_COMPATIBLE__ to get a backward compatible delay.
+ 217:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    Also, the backward compatible
+ 218:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    algorithm will be chosen if the code is compiled in a <em>freestanding
+ 219:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    environment</em> (GCC option \c -ffreestanding), as the math functions
+ 220:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****    required for rounding are not available to the compiler then.
+ 221:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 222:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****  */
+ 223:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** void
+ 224:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** _delay_us(double __us)
+ 225:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** {
+ 226:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	double __tmp ; 
+ 227:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 228:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 229:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h ****   __STDC_HOSTED__
+ 230:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	uint32_t __ticks_dc;
+ 231:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 232:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 1e6) * __us;
+ 233:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 234:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 235:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 236:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 237:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 238:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 239:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 240:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#else
+ 241:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		//round up by default
+ 242:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 243:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	#endif
+ 244:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 
+ 245:/usr/local/CrossPack-AVR-20131216/avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 179               		.loc 2 245 0
+ 180 0096 35E0      		ldi r19,lo8(5)
+ 181 0098 3A95      		1: dec r19
+ 182 009a 01F4      		brne 1b
+ 183 009c 0000      		nop
+ 184               	.LVL17:
+ 185 009e 0197      		sbiw r24,1
+ 186               	.LVL18:
+ 187               	.LBE21:
+ 188               	.LBE20:
+ 140:lab2b.c       ****   	}
+ 141:lab2b.c       **** 	return;
+ 142:lab2b.c       **** }
+ 143:lab2b.c       **** 
+ 144:lab2b.c       **** static void delay_us (uint16_t us) {
+ 145:lab2b.c       **** 	uint16_t i;
+ 146:lab2b.c       **** 	
+ 147:lab2b.c       **** 	for (i = 0; i < us; i++)
+ 189               		.loc 1 147 0
+ 190 00a0 0097      		sbiw r24,0
+ 191 00a2 01F4      		brne .L9
+ 192               	.LBE19:
+ 193               	.LBE18:
+ 127:lab2b.c       **** 	PORTD |= ((bits[0] << PD2) | (bits[1] << PD3) | (bits[2] << PD4) | (bits[3] << PD5) | (bits[4] << 
+ 194               		.loc 1 127 0
+ 195 00a4 4BB1      		in r20,0xb
+ 196 00a6 2981      		ldd r18,Y+1
+ 197 00a8 54E0      		ldi r21,lo8(4)
+ 198 00aa 259F      		mul r18,r21
+ 199 00ac 9001      		movw r18,r0
+ 200 00ae 1124      		clr __zero_reg__
+ 201 00b0 8A81      		ldd r24,Y+2
+ 202               	.LVL19:
+ 203 00b2 58E0      		ldi r21,lo8(8)
+ 204 00b4 859F      		mul r24,r21
+ 205 00b6 C001      		movw r24,r0
+ 206 00b8 1124      		clr __zero_reg__
+ 207 00ba 282B      		or r18,r24
+ 208 00bc 242B      		or r18,r20
+ 209 00be 8B81      		ldd r24,Y+3
+ 210 00c0 30E1      		ldi r19,lo8(16)
+ 211 00c2 839F      		mul r24,r19
+ 212 00c4 C001      		movw r24,r0
+ 213 00c6 1124      		clr __zero_reg__
+ 214 00c8 282B      		or r18,r24
+ 215 00ca 8C81      		ldd r24,Y+4
+ 216 00cc 50E2      		ldi r21,lo8(32)
+ 217 00ce 859F      		mul r24,r21
+ 218 00d0 C001      		movw r24,r0
+ 219 00d2 1124      		clr __zero_reg__
+ 220 00d4 282B      		or r18,r24
+ 221 00d6 8D81      		ldd r24,Y+5
+ 222 00d8 30E4      		ldi r19,lo8(64)
+ 223 00da 839F      		mul r24,r19
+ 224 00dc C001      		movw r24,r0
+ 225 00de 1124      		clr __zero_reg__
+ 226 00e0 282B      		or r18,r24
+ 227 00e2 8E81      		ldd r24,Y+6
+ 228 00e4 50E8      		ldi r21,lo8(-128)
+ 229 00e6 859F      		mul r24,r21
+ 230 00e8 C001      		movw r24,r0
+ 231 00ea 1124      		clr __zero_reg__
+ 232 00ec 282B      		or r18,r24
+ 233 00ee 2BB9      		out 0xb,r18
+ 128:lab2b.c       **** 	PORTB |= ((bits[6] << PB0) | (bits[7] << PB1));
+ 234               		.loc 1 128 0
+ 235 00f0 95B1      		in r25,0x5
+ 236 00f2 8F81      		ldd r24,Y+7
+ 237 00f4 982B      		or r25,r24
+ 238 00f6 8885      		ldd r24,Y+8
+ 239 00f8 880F      		lsl r24
+ 240 00fa 892B      		or r24,r25
+ 241 00fc 85B9      		out 0x5,r24
+ 242               	.LBE22:
+ 243               	.LBE27:
+  96:lab2b.c       **** 			change = NONE;
+ 244               		.loc 1 96 0
+ 245 00fe 80E0      		ldi r24,0
+ 246 0100 90E0      		ldi r25,0
+ 247 0102 00C0      		rjmp .L2
+ 248               		.cfi_endproc
+ 249               	.LFE6:
+ 251               		.text
+ 252               	.Letext0:
+ 253               		.file 3 "/usr/local/CrossPack-AVR-20131216/avr/include/stdint.h"
+DEFINED SYMBOLS
+                            *ABS*:00000000 lab2b.c
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccQgGgo4.s:2      *ABS*:0000003e __SP_H__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccQgGgo4.s:3      *ABS*:0000003d __SP_L__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccQgGgo4.s:4      *ABS*:0000003f __SREG__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccQgGgo4.s:5      *ABS*:00000000 __tmp_reg__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccQgGgo4.s:6      *ABS*:00000001 __zero_reg__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//ccQgGgo4.s:13     .text.startup:00000000 main
+
+NO UNDEFINED SYMBOLS

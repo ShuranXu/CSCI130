@@ -1,0 +1,1 @@
+helloEmbeddedWorld.o: helloEmbeddedWorld.c

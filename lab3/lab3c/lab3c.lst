@@ -1,0 +1,660 @@
+   1               		.file	"lab3c.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  11               	transmitByte:
+  12               	.LFB11:
+  13               		.file 1 "lab3c.c"
+   1:lab3c.c       **** #include <avr/io.h>
+   2:lab3c.c       **** #include <util/delay.h>
+   3:lab3c.c       **** #include <avr/cpufunc.h>
+   4:lab3c.c       **** #include <stdio.h>
+   5:lab3c.c       **** 
+   6:lab3c.c       **** /*
+   7:lab3c.c       **** 
+   8:lab3c.c       **** Assignment:
+   9:lab3c.c       **** 
+  10:lab3c.c       **** i. Connect the 4 DIP switches (SW1_1-SW1_4) on the IO Trainer Board to 4 pins on the Romeo
+  11:lab3c.c       **** Board
+  12:lab3c.c       **** 
+  13:lab3c.c       **** v. Write a C program that read in the state of the 4 DIP switches as a binary number where SW1_1
+  14:lab3c.c       **** is the most significant bit and SW1_4 is the least significant bit. The program will display both a
+  15:lab3c.c       **** binary and decimal representation of the state of the DIP switches. For example:
+  16:lab3c.c       **** SW1_1 = on; SW1_2 = on; SW1_3 = off; SW1_4 = on;
+  17:lab3c.c       **** Serial Output:
+  18:lab3c.c       **** 00001101 13
+  19:lab3c.c       **** 
+  20:lab3c.c       **** The program will only display a new number when there is the state of the DIP switches have
+  21:lab3c.c       **** been changed.
+  22:lab3c.c       **** 
+  23:lab3c.c       **** ii. Include the printDec function from 3B. Add a new function defined as:
+  24:lab3c.c       **** void printByte(uint8_t num)
+  25:lab3c.c       **** 
+  26:lab3c.c       **** The function takes in 8-bit unsigned integer as a parameter. The function would output the ASCII
+  27:lab3c.c       **** representation of the 8-bit number in binary through the UART. The output should have leading
+  28:lab3c.c       **** zeros.
+  29:lab3c.c       **** 
+  30:lab3c.c       **** 
+  31:lab3c.c       **** Connection Diagram:
+  32:lab3c.c       **** 
+  33:lab3c.c       **** Atmega328p | Romeo board | IO Board | Jumper Component
+  34:lab3c.c       **** 
+  35:lab3c.c       **** 	PD2    |     D2     |  JP2_5   | 	S1  
+  36:lab3c.c       **** 	PD3    |     D3     |  JP2_6   | 	S2
+  37:lab3c.c       **** 	PD4    |     D4     |  JP2_7   | 	S3
+  38:lab3c.c       **** 	PD5    |     D5     |  JP2_8   | 	S4
+  39:lab3c.c       **** 	
+  40:lab3c.c       **** */
+  41:lab3c.c       **** 
+  42:lab3c.c       **** /*********************************************
+  43:lab3c.c       **** 	Macros & Enums
+  44:lab3c.c       **** **********************************************/
+  45:lab3c.c       **** 
+  46:lab3c.c       **** #define F_CPU 16000000UL
+  47:lab3c.c       **** #define BAUD 9600
+  48:lab3c.c       **** 
+  49:lab3c.c       **** enum{
+  50:lab3c.c       **** 
+  51:lab3c.c       **** 	S1 = 0,
+  52:lab3c.c       **** 	S2,
+  53:lab3c.c       **** 	S3,
+  54:lab3c.c       **** 	S4
+  55:lab3c.c       **** };
+  56:lab3c.c       **** 
+  57:lab3c.c       **** /*********************************************
+  58:lab3c.c       **** 	Global variables
+  59:lab3c.c       **** **********************************************/
+  60:lab3c.c       **** 
+  61:lab3c.c       **** int input_bit_shifts[] = {2,3,4,5};
+  62:lab3c.c       **** int number_bit_shifts[] = {3,2,1,0};
+  63:lab3c.c       **** 
+  64:lab3c.c       **** /*********************************************
+  65:lab3c.c       **** 	Local Function Declaration
+  66:lab3c.c       **** **********************************************/
+  67:lab3c.c       **** 
+  68:lab3c.c       **** static void initUART(uint32_t baud);
+  69:lab3c.c       **** static void transmitByte(uint8_t data);
+  70:lab3c.c       **** static void printCR(void);
+  71:lab3c.c       **** static void transmitString(char* stringPtr);
+  72:lab3c.c       **** static void printByte(uint8_t num);
+  73:lab3c.c       **** static void printDec(int num);
+  74:lab3c.c       **** static void updateNumberFromInput(uint8_t input,int switch_number, uint8_t* number);
+  75:lab3c.c       **** 
+  76:lab3c.c       **** /*********************************************
+  77:lab3c.c       **** 	Main Function
+  78:lab3c.c       **** **********************************************/
+  79:lab3c.c       **** 
+  80:lab3c.c       **** int main(int argc, char const *argv[]){
+  81:lab3c.c       **** 
+  82:lab3c.c       **** 	//set D2-D5 as input pins 
+  83:lab3c.c       **** 	DDRD &=~((1 << PD2) | (1 << PD3) | (1 << PD4) | (1 << PD5));
+  84:lab3c.c       **** 	//set up pull-up resistors
+  85:lab3c.c       **** 	PORTD |=((1 << PD2) | (1 << PD3) | (1 << PD4) | (1 << PD5));
+  86:lab3c.c       **** 
+  87:lab3c.c       **** 	initUART(BAUD);
+  88:lab3c.c       **** 	
+  89:lab3c.c       **** 	volatile uint8_t input;
+  90:lab3c.c       **** 	uint8_t number = 0;
+  91:lab3c.c       **** 	uint8_t old_number = number;
+  92:lab3c.c       **** 
+  93:lab3c.c       **** 	while(1){
+  94:lab3c.c       **** 
+  95:lab3c.c       **** 		//insert NOP for synchronization
+  96:lab3c.c       **** 		_NOP();
+  97:lab3c.c       **** 
+  98:lab3c.c       **** 		input = PIND;
+  99:lab3c.c       **** 
+ 100:lab3c.c       **** 		updateNumberFromInput(input,S1, &number);
+ 101:lab3c.c       **** 		updateNumberFromInput(input,S2, &number);
+ 102:lab3c.c       **** 		updateNumberFromInput(input,S3, &number);
+ 103:lab3c.c       **** 		updateNumberFromInput(input,S4, &number);
+ 104:lab3c.c       **** 
+ 105:lab3c.c       **** 		if( number != old_number ){
+ 106:lab3c.c       **** 			printByte(number);
+ 107:lab3c.c       **** 			transmitByte(' ');
+ 108:lab3c.c       **** 			printDec(number);
+ 109:lab3c.c       **** 			printCR(); 
+ 110:lab3c.c       **** 			old_number = number;
+ 111:lab3c.c       **** 		}
+ 112:lab3c.c       **** 	}
+ 113:lab3c.c       **** 	return 0;
+ 114:lab3c.c       **** }
+ 115:lab3c.c       **** 
+ 116:lab3c.c       **** 
+ 117:lab3c.c       **** /*********************************************
+ 118:lab3c.c       **** 	Local Function Definition
+ 119:lab3c.c       **** **********************************************/
+ 120:lab3c.c       **** 
+ 121:lab3c.c       **** /*
+ 122:lab3c.c       **** 	Update the number based on the switch
+ 123:lab3c.c       **** */
+ 124:lab3c.c       **** static void updateNumberFromInput(uint8_t input,int switch_number, uint8_t* number){
+ 125:lab3c.c       **** 
+ 126:lab3c.c       **** 	if((input & (1 << input_bit_shifts[switch_number])) == 0 ){ 
+ 127:lab3c.c       **** 			*number |= (1 << number_bit_shifts[switch_number]);
+ 128:lab3c.c       **** 		}
+ 129:lab3c.c       **** 		else{
+ 130:lab3c.c       **** 			*number &= ~(1 << number_bit_shifts[switch_number]);
+ 131:lab3c.c       **** 		}
+ 132:lab3c.c       **** }
+ 133:lab3c.c       **** 
+ 134:lab3c.c       **** /*
+ 135:lab3c.c       ****   Initialize settings for uart functions, the function runs the USART
+ 136:lab3c.c       **** in double speed mode.
+ 137:lab3c.c       **** */ 
+ 138:lab3c.c       **** 
+ 139:lab3c.c       **** static void initUART(uint32_t baud){
+ 140:lab3c.c       **** 
+ 141:lab3c.c       ****    //double-speed mode UBRR formula
+ 142:lab3c.c       ****    unsigned int ubrr = F_CPU/8/baud -1;
+ 143:lab3c.c       ****    //shift MSB and store in UBRR0H 
+ 144:lab3c.c       ****    UBRR0H = (unsigned char) (ubrr >> 8); 
+ 145:lab3c.c       ****    //store LSB in UBRR0L      
+ 146:lab3c.c       ****    UBRR0L = (unsigned char) ubrr;
+ 147:lab3c.c       ****    //enable double speed mode
+ 148:lab3c.c       ****    UCSR0A = (1 << U2X0);
+ 149:lab3c.c       ****    //enable transmitter/receiver 
+ 150:lab3c.c       ****    UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+ 151:lab3c.c       ****    //8-Bit Characters, 1 Stop bits, Even parity
+ 152:lab3c.c       ****    UCSR0C = (1 << UCSZ00) | (1 << UCSZ01) | (1 << UPM01);
+ 153:lab3c.c       ****    
+ 154:lab3c.c       **** }
+ 155:lab3c.c       **** 
+ 156:lab3c.c       **** /* 
+ 157:lab3c.c       **** 	print carriage return & newline
+ 158:lab3c.c       **** */
+ 159:lab3c.c       **** 
+ 160:lab3c.c       **** static void printCR(void){
+ 161:lab3c.c       **** 
+ 162:lab3c.c       **** 	transmitByte((uint8_t)'\n');
+ 163:lab3c.c       **** 	transmitByte((uint8_t)'\r');
+ 164:lab3c.c       **** }
+ 165:lab3c.c       **** 
+ 166:lab3c.c       **** /*
+ 167:lab3c.c       ****    Write byte to UART
+ 168:lab3c.c       **** */ 
+ 169:lab3c.c       **** 
+ 170:lab3c.c       **** static void transmitByte(uint8_t data){
+  14               		.loc 1 170 0
+  15               		.cfi_startproc
+  16               	/* prologue: function */
+  17               	/* frame size = 0 */
+  18               	/* stack size = 0 */
+  19               	.L__stack_usage = 0
+  20               	.LVL0:
+  21               	.L3:
+ 171:lab3c.c       **** 
+ 172:lab3c.c       **** 	// Wait for empty transmit buffer
+ 173:lab3c.c       ****    	while ( !(UCSR0A & (1 << UDRE0)) );
+  22               		.loc 1 173 0 discriminator 1
+  23 0000 9091 C000 		lds r25,192
+  24 0004 95FF      		sbrs r25,5
+  25 0006 00C0      		rjmp .L3
+ 174:lab3c.c       ****     // Start transmission by writing to UDR0 register
+ 175:lab3c.c       ****    	UDR0 = data;
+  26               		.loc 1 175 0
+  27 0008 8093 C600 		sts 198,r24
+  28 000c 0895      		ret
+  29               		.cfi_endproc
+  30               	.LFE11:
+  33               	updateNumberFromInput:
+  34               	.LFB8:
+ 124:lab3c.c       **** static void updateNumberFromInput(uint8_t input,int switch_number, uint8_t* number){
+  35               		.loc 1 124 0
+  36               		.cfi_startproc
+  37               	.LVL1:
+  38               	/* prologue: function */
+  39               	/* frame size = 0 */
+  40               	/* stack size = 0 */
+  41               	.L__stack_usage = 0
+  42 000e FA01      		movw r30,r20
+ 126:lab3c.c       **** 	if((input & (1 << input_bit_shifts[switch_number])) == 0 ){ 
+  43               		.loc 1 126 0
+  44 0010 282F      		mov r18,r24
+  45 0012 30E0      		ldi r19,0
+  46 0014 660F      		lsl r22
+  47 0016 771F      		rol r23
+  48               	.LVL2:
+  49 0018 DB01      		movw r26,r22
+  50 001a A050      		subi r26,lo8(-(input_bit_shifts))
+  51 001c B040      		sbci r27,hi8(-(input_bit_shifts))
+  52 001e 0C90      		ld r0,X
+  53 0020 00C0      		rjmp 2f
+  54               		1:
+  55 0022 3595      		asr r19
+  56 0024 2795      		ror r18
+  57               		2:
+  58 0026 0A94      		dec r0
+  59 0028 02F4      		brpl 1b
+  60               	.LVL3:
+  61 002a DB01      		movw r26,r22
+  62 002c A050      		subi r26,lo8(-(number_bit_shifts))
+  63 002e B040      		sbci r27,hi8(-(number_bit_shifts))
+  64 0030 3081      		ld r19,Z
+  65               	.LBB4:
+  66               	.LBB5:
+ 127:lab3c.c       **** 			*number |= (1 << number_bit_shifts[switch_number]);
+  67               		.loc 1 127 0
+  68 0032 81E0      		ldi r24,lo8(1)
+  69 0034 90E0      		ldi r25,0
+  70 0036 0C90      		ld r0,X
+  71 0038 00C0      		rjmp 2f
+  72               		1:
+  73 003a 880F      		lsl r24
+  74 003c 991F      		rol r25
+  75               		2:
+  76 003e 0A94      		dec r0
+  77 0040 02F4      		brpl 1b
+  78               	.LBE5:
+  79               	.LBE4:
+ 126:lab3c.c       **** 	if((input & (1 << input_bit_shifts[switch_number])) == 0 ){ 
+  80               		.loc 1 126 0
+  81 0042 20FD      		sbrc r18,0
+  82 0044 00C0      		rjmp .L6
+  83               	.LVL4:
+  84               	.LBB7:
+  85               	.LBB6:
+ 127:lab3c.c       **** 			*number |= (1 << number_bit_shifts[switch_number]);
+  86               		.loc 1 127 0
+  87 0046 832B      		or r24,r19
+  88 0048 00C0      		rjmp .L8
+  89               	.LVL5:
+  90               	.L6:
+  91               	.LBE6:
+  92               	.LBE7:
+ 130:lab3c.c       **** 			*number &= ~(1 << number_bit_shifts[switch_number]);
+  93               		.loc 1 130 0
+  94 004a 8095      		com r24
+  95 004c 8323      		and r24,r19
+  96               	.L8:
+  97 004e 8083      		st Z,r24
+  98 0050 0895      		ret
+  99               		.cfi_endproc
+ 100               	.LFE8:
+ 102               		.section	.rodata.str1.1,"aMS",@progbits,1
+ 103               	.LC1:
+ 104 0000 2564 00   		.string	"%d"
+ 105               		.section	.rodata
+ 106               	.LC0:
+ 107 0000 30        		.byte	48
+ 108 0001 30        		.byte	48
+ 109 0002 30        		.byte	48
+ 110 0003 30        		.byte	48
+ 111 0004 30        		.byte	48
+ 112 0005 30        		.byte	48
+ 113 0006 30        		.byte	48
+ 114 0007 30        		.byte	48
+ 115 0008 00        		.byte	0
+ 116               		.section	.text.startup,"ax",@progbits
+ 117               	.global	main
+ 119               	main:
+ 120               	.LFB7:
+  80:lab3c.c       **** int main(int argc, char const *argv[]){
+ 121               		.loc 1 80 0
+ 122               		.cfi_startproc
+ 123               	.LVL6:
+ 124 0000 CF93      		push r28
+ 125               	.LCFI0:
+ 126               		.cfi_def_cfa_offset 3
+ 127               		.cfi_offset 28, -2
+ 128 0002 DF93      		push r29
+ 129               	.LCFI1:
+ 130               		.cfi_def_cfa_offset 4
+ 131               		.cfi_offset 29, -3
+ 132 0004 CDB7      		in r28,__SP_L__
+ 133 0006 DEB7      		in r29,__SP_H__
+ 134               	.LCFI2:
+ 135               		.cfi_def_cfa_register 28
+ 136 0008 A297      		sbiw r28,34
+ 137               	.LCFI3:
+ 138               		.cfi_def_cfa_offset 38
+ 139 000a 0FB6      		in __tmp_reg__,__SREG__
+ 140 000c F894      		cli
+ 141 000e DEBF      		out __SP_H__,r29
+ 142 0010 0FBE      		out __SREG__,__tmp_reg__
+ 143 0012 CDBF      		out __SP_L__,r28
+ 144               	/* prologue: function */
+ 145               	/* frame size = 34 */
+ 146               	/* stack size = 36 */
+ 147               	.L__stack_usage = 36
+  83:lab3c.c       **** 	DDRD &=~((1 << PD2) | (1 << PD3) | (1 << PD4) | (1 << PD5));
+ 148               		.loc 1 83 0
+ 149 0014 8AB1      		in r24,0xa
+ 150               	.LVL7:
+ 151 0016 837C      		andi r24,lo8(-61)
+ 152 0018 8AB9      		out 0xa,r24
+  85:lab3c.c       **** 	PORTD |=((1 << PD2) | (1 << PD3) | (1 << PD4) | (1 << PD5));
+ 153               		.loc 1 85 0
+ 154 001a 8BB1      		in r24,0xb
+ 155 001c 8C63      		ori r24,lo8(60)
+ 156 001e 8BB9      		out 0xb,r24
+ 157               	.LVL8:
+ 158               	.LBB20:
+ 159               	.LBB21:
+ 144:lab3c.c       ****    UBRR0H = (unsigned char) (ubrr >> 8); 
+ 160               		.loc 1 144 0
+ 161 0020 1092 C500 		sts 197,__zero_reg__
+ 146:lab3c.c       ****    UBRR0L = (unsigned char) ubrr;
+ 162               		.loc 1 146 0
+ 163 0024 8FEC      		ldi r24,lo8(-49)
+ 164 0026 8093 C400 		sts 196,r24
+ 148:lab3c.c       ****    UCSR0A = (1 << U2X0);
+ 165               		.loc 1 148 0
+ 166 002a 82E0      		ldi r24,lo8(2)
+ 167 002c 8093 C000 		sts 192,r24
+ 150:lab3c.c       ****    UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+ 168               		.loc 1 150 0
+ 169 0030 88E1      		ldi r24,lo8(24)
+ 170 0032 8093 C100 		sts 193,r24
+ 152:lab3c.c       ****    UCSR0C = (1 << UCSZ00) | (1 << UCSZ01) | (1 << UPM01);
+ 171               		.loc 1 152 0
+ 172 0036 86E2      		ldi r24,lo8(38)
+ 173 0038 8093 C200 		sts 194,r24
+ 174               	.LBE21:
+ 175               	.LBE20:
+  90:lab3c.c       **** 	uint8_t number = 0;
+ 176               		.loc 1 90 0
+ 177 003c 19A2      		std Y+33,__zero_reg__
+ 178               	.LVL9:
+  91:lab3c.c       **** 	uint8_t old_number = number;
+ 179               		.loc 1 91 0
+ 180 003e D12C      		mov r13,__zero_reg__
+ 181               	.LBB22:
+ 182               	.LBB23:
+ 176:lab3c.c       **** }  
+ 177:lab3c.c       **** 
+ 178:lab3c.c       **** /*
+ 179:lab3c.c       **** 	Print a signed int number to the serial console. The negtive sign is printed if the number is nega
+ 180:lab3c.c       **** 	In addition, necessary character shifting is also performed for pretty formatting. 
+ 181:lab3c.c       **** */
+ 182:lab3c.c       **** 
+ 183:lab3c.c       **** static void printDec(int num){
+ 184:lab3c.c       **** 
+ 185:lab3c.c       **** 	char str[32];
+ 186:lab3c.c       **** 	sprintf(str,"%d",num);
+ 187:lab3c.c       **** 	transmitString(str);
+ 188:lab3c.c       **** }
+ 189:lab3c.c       **** 
+ 190:lab3c.c       **** /*
+ 191:lab3c.c       **** 	print a string in the serial console
+ 192:lab3c.c       **** */
+ 193:lab3c.c       **** 
+ 194:lab3c.c       **** static void transmitString(char* stringPtr){
+ 195:lab3c.c       **** 
+ 196:lab3c.c       **** 	char* iter = stringPtr;
+ 197:lab3c.c       **** 	while(*iter != '\0'){
+ 198:lab3c.c       **** 		transmitByte(*iter++);
+ 199:lab3c.c       **** 	}
+ 200:lab3c.c       **** }
+ 201:lab3c.c       **** 
+ 202:lab3c.c       **** /*
+ 203:lab3c.c       **** 	convert a 8-bit number to its binary form
+ 204:lab3c.c       **** */
+ 205:lab3c.c       **** 
+ 206:lab3c.c       **** static void printByte(uint8_t num){
+ 207:lab3c.c       **** 
+ 208:lab3c.c       ****   int c,k,j;
+ 209:lab3c.c       ****   j = 4;
+ 210:lab3c.c       ****   char bits[9] = {'0','0','0','0','0','0','0','0','\0'};
+ 183               		.loc 1 210 0
+ 184 0040 99E0      		ldi r25,lo8(9)
+ 185 0042 B92E      		mov r11,r25
+ 186 0044 8E01      		movw r16,r28
+ 187 0046 0F5F      		subi r16,-1
+ 188 0048 1F4F      		sbci r17,-1
+ 189               	.LBE23:
+ 190               	.LBE22:
+ 191               	.LBB27:
+ 192               	.LBB28:
+ 186:lab3c.c       **** 	sprintf(str,"%d",num);
+ 193               		.loc 1 186 0
+ 194 004a 20E0      		ldi r18,lo8(.LC1)
+ 195 004c E22E      		mov r14,r18
+ 196 004e 20E0      		ldi r18,hi8(.LC1)
+ 197 0050 F22E      		mov r15,r18
+ 198               	.LVL10:
+ 199               	.L11:
+ 200               	.LBE28:
+ 201               	.LBE27:
+  96:lab3c.c       **** 		_NOP();
+ 202               		.loc 1 96 0
+ 203               	/* #APP */
+ 204               	 ;  96 "lab3c.c" 1
+ 205 0052 0000      		nop
+ 206               	 ;  0 "" 2
+  98:lab3c.c       **** 		input = PIND;
+ 207               		.loc 1 98 0
+ 208               	/* #NOAPP */
+ 209 0054 89B1      		in r24,0x9
+ 210 0056 8AA3      		std Y+34,r24
+ 100:lab3c.c       **** 		updateNumberFromInput(input,S1, &number);
+ 211               		.loc 1 100 0
+ 212 0058 8AA1      		ldd r24,Y+34
+ 213 005a AE01      		movw r20,r28
+ 214 005c 4F5D      		subi r20,-33
+ 215 005e 5F4F      		sbci r21,-1
+ 216 0060 60E0      		ldi r22,0
+ 217 0062 70E0      		ldi r23,0
+ 218 0064 0E94 0000 		call updateNumberFromInput
+ 219               	.LVL11:
+ 101:lab3c.c       **** 		updateNumberFromInput(input,S2, &number);
+ 220               		.loc 1 101 0
+ 221 0068 8AA1      		ldd r24,Y+34
+ 222 006a AE01      		movw r20,r28
+ 223 006c 4F5D      		subi r20,-33
+ 224 006e 5F4F      		sbci r21,-1
+ 225 0070 61E0      		ldi r22,lo8(1)
+ 226 0072 70E0      		ldi r23,0
+ 227 0074 0E94 0000 		call updateNumberFromInput
+ 228               	.LVL12:
+ 102:lab3c.c       **** 		updateNumberFromInput(input,S3, &number);
+ 229               		.loc 1 102 0
+ 230 0078 8AA1      		ldd r24,Y+34
+ 231 007a AE01      		movw r20,r28
+ 232 007c 4F5D      		subi r20,-33
+ 233 007e 5F4F      		sbci r21,-1
+ 234 0080 62E0      		ldi r22,lo8(2)
+ 235 0082 70E0      		ldi r23,0
+ 236 0084 0E94 0000 		call updateNumberFromInput
+ 237               	.LVL13:
+ 103:lab3c.c       **** 		updateNumberFromInput(input,S4, &number);
+ 238               		.loc 1 103 0
+ 239 0088 8AA1      		ldd r24,Y+34
+ 240 008a AE01      		movw r20,r28
+ 241 008c 4F5D      		subi r20,-33
+ 242 008e 5F4F      		sbci r21,-1
+ 243 0090 63E0      		ldi r22,lo8(3)
+ 244 0092 70E0      		ldi r23,0
+ 245 0094 0E94 0000 		call updateNumberFromInput
+ 246               	.LVL14:
+ 105:lab3c.c       **** 		if( number != old_number ){
+ 247               		.loc 1 105 0
+ 248 0098 29A1      		ldd r18,Y+33
+ 249 009a 2D15      		cp r18,r13
+ 250 009c 01F0      		breq .L11
+ 251               	.LVL15:
+ 252               	.LBB32:
+ 253               	.LBB26:
+ 254               		.loc 1 210 0
+ 255 009e E0E0      		ldi r30,lo8(.LC0)
+ 256 00a0 F0E0      		ldi r31,hi8(.LC0)
+ 257 00a2 D801      		movw r26,r16
+ 258 00a4 8B2D      		mov r24,r11
+ 259               		0:
+ 260 00a6 0190      		ld r0,Z+
+ 261 00a8 0D92      		st X+,r0
+ 262 00aa 8A95      		dec r24
+ 263 00ac 01F4      		brne 0b
+ 264               	.LVL16:
+ 265 00ae FE01      		movw r30,r28
+ 266 00b0 3596      		adiw r30,5
+ 211:lab3c.c       **** 
+ 212:lab3c.c       ****   for (c = 3; c >= 0; c--){
+ 267               		.loc 1 212 0
+ 268 00b2 83E0      		ldi r24,lo8(3)
+ 269 00b4 90E0      		ldi r25,0
+ 213:lab3c.c       ****       k = num >> c;
+ 270               		.loc 1 213 0
+ 271 00b6 30E0      		ldi r19,0
+ 272               	.LVL17:
+ 273               	.L15:
+ 274 00b8 A901      		movw r20,r18
+ 275 00ba 082E      		mov r0,r24
+ 276 00bc 00C0      		rjmp 2f
+ 277               		1:
+ 278 00be 5595      		asr r21
+ 279 00c0 4795      		ror r20
+ 280               		2:
+ 281 00c2 0A94      		dec r0
+ 282 00c4 02F4      		brpl 1b
+ 214:lab3c.c       ****       bits[j++] = (k & 1) ? '1' : '0';
+ 283               		.loc 1 214 0
+ 284 00c6 40FF      		sbrs r20,0
+ 285 00c8 00C0      		rjmp .L20
+ 286 00ca 41E3      		ldi r20,lo8(49)
+ 287 00cc 00C0      		rjmp .L12
+ 288               	.L20:
+ 289 00ce 40E3      		ldi r20,lo8(48)
+ 290               	.L12:
+ 291 00d0 4193      		st Z+,r20
+ 212:lab3c.c       ****   for (c = 3; c >= 0; c--){
+ 292               		.loc 1 212 0
+ 293               	.LVL18:
+ 294 00d2 0197      		sbiw r24,1
+ 295 00d4 00F4      		brcc .L15
+ 296 00d6 6801      		movw r12,r16
+ 297               	.LVL19:
+ 298               	.L14:
+ 299               	.LBB24:
+ 300               	.LBB25:
+ 197:lab3c.c       **** 	while(*iter != '\0'){
+ 301               		.loc 1 197 0
+ 302 00d8 F601      		movw r30,r12
+ 303 00da 8191      		ld r24,Z+
+ 304 00dc 6F01      		movw r12,r30
+ 305               	.LVL20:
+ 306 00de 8823      		tst r24
+ 307 00e0 01F0      		breq .L21
+ 308               	.LVL21:
+ 198:lab3c.c       **** 		transmitByte(*iter++);
+ 309               		.loc 1 198 0
+ 310 00e2 0E94 0000 		call transmitByte
+ 311               	.LVL22:
+ 312 00e6 00C0      		rjmp .L14
+ 313               	.LVL23:
+ 314               	.L21:
+ 315               	.LBE25:
+ 316               	.LBE24:
+ 317               	.LBE26:
+ 318               	.LBE32:
+ 107:lab3c.c       **** 			transmitByte(' ');
+ 319               		.loc 1 107 0
+ 320 00e8 80E2      		ldi r24,lo8(32)
+ 321 00ea 0E94 0000 		call transmitByte
+ 322               	.LVL24:
+ 108:lab3c.c       **** 			printDec(number);
+ 323               		.loc 1 108 0
+ 324 00ee 89A1      		ldd r24,Y+33
+ 325               	.LBB33:
+ 326               	.LBB31:
+ 186:lab3c.c       **** 	sprintf(str,"%d",num);
+ 327               		.loc 1 186 0
+ 328 00f0 1F92      		push __zero_reg__
+ 329 00f2 8F93      		push r24
+ 330 00f4 FF92      		push r15
+ 331 00f6 EF92      		push r14
+ 332 00f8 1F93      		push r17
+ 333 00fa 0F93      		push r16
+ 334 00fc 0E94 0000 		call sprintf
+ 335               	.LVL25:
+ 336 0100 6801      		movw r12,r16
+ 337               	.LVL26:
+ 338 0102 0F90      		pop __tmp_reg__
+ 339 0104 0F90      		pop __tmp_reg__
+ 340 0106 0F90      		pop __tmp_reg__
+ 341 0108 0F90      		pop __tmp_reg__
+ 342 010a 0F90      		pop __tmp_reg__
+ 343 010c 0F90      		pop __tmp_reg__
+ 344               	.L17:
+ 345               	.LVL27:
+ 346               	.LBB29:
+ 347               	.LBB30:
+ 197:lab3c.c       **** 	while(*iter != '\0'){
+ 348               		.loc 1 197 0
+ 349 010e F601      		movw r30,r12
+ 350 0110 8191      		ld r24,Z+
+ 351 0112 6F01      		movw r12,r30
+ 352               	.LVL28:
+ 353 0114 8823      		tst r24
+ 354 0116 01F0      		breq .L22
+ 355               	.LVL29:
+ 198:lab3c.c       **** 		transmitByte(*iter++);
+ 356               		.loc 1 198 0
+ 357 0118 0E94 0000 		call transmitByte
+ 358               	.LVL30:
+ 359 011c 00C0      		rjmp .L17
+ 360               	.LVL31:
+ 361               	.L22:
+ 362               	.LBE30:
+ 363               	.LBE29:
+ 364               	.LBE31:
+ 365               	.LBE33:
+ 366               	.LBB34:
+ 367               	.LBB35:
+ 162:lab3c.c       **** 	transmitByte((uint8_t)'\n');
+ 368               		.loc 1 162 0
+ 369 011e 8AE0      		ldi r24,lo8(10)
+ 370 0120 0E94 0000 		call transmitByte
+ 371               	.LVL32:
+ 163:lab3c.c       **** 	transmitByte((uint8_t)'\r');
+ 372               		.loc 1 163 0
+ 373 0124 8DE0      		ldi r24,lo8(13)
+ 374 0126 0E94 0000 		call transmitByte
+ 375               	.LVL33:
+ 376               	.LBE35:
+ 377               	.LBE34:
+ 110:lab3c.c       **** 			old_number = number;
+ 378               		.loc 1 110 0
+ 379 012a D9A0      		ldd r13,Y+33
+ 380               	.LVL34:
+ 381 012c 00C0      		rjmp .L11
+ 382               		.cfi_endproc
+ 383               	.LFE7:
+ 385               	.global	number_bit_shifts
+ 386               		.data
+ 389               	number_bit_shifts:
+ 390 0000 0300      		.word	3
+ 391 0002 0200      		.word	2
+ 392 0004 0100      		.word	1
+ 393 0006 0000      		.word	0
+ 394               	.global	input_bit_shifts
+ 397               	input_bit_shifts:
+ 398 0008 0200      		.word	2
+ 399 000a 0300      		.word	3
+ 400 000c 0400      		.word	4
+ 401 000e 0500      		.word	5
+ 402               		.text
+ 403               	.Letext0:
+ 404               		.file 2 "/usr/local/CrossPack-AVR-20131216/avr/include/stdint.h"
+ 405               		.file 3 "/usr/local/CrossPack-AVR-20131216/avr/include/stdio.h"
+DEFINED SYMBOLS
+                            *ABS*:00000000 lab3c.c
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:2      *ABS*:0000003e __SP_H__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:3      *ABS*:0000003d __SP_L__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:4      *ABS*:0000003f __SREG__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:5      *ABS*:00000000 __tmp_reg__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:6      *ABS*:00000001 __zero_reg__
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:11     .text:00000000 transmitByte
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:33     .text:0000000e updateNumberFromInput
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:397    .data:00000008 input_bit_shifts
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:389    .data:00000000 number_bit_shifts
+/var/folders/y1/ytk3559n6_95s3fkjf945z6r0000gn/T//cceKPT6z.s:119    .text.startup:00000000 main
+
+UNDEFINED SYMBOLS
+sprintf
+__do_copy_data
